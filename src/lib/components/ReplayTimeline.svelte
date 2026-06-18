@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { ReplaySnapshot, ReplayStep } from '../game/replay';
+  import MctsPanel from './MctsPanel.svelte';
 
   type Props = {
     replay: ReplaySnapshot;
@@ -106,6 +107,10 @@
   {#if payloadPreview}
     <pre>{payloadPreview}</pre>
   {/if}
+
+  {#if step.mcts}
+    <MctsPanel mcts={step.mcts} />
+  {/if}
 </aside>
 
 <style>
@@ -160,7 +165,9 @@
     top: 414px;
     right: 14px;
     z-index: 9;
-    width: 148px;
+    width: 204px;
+    max-height: calc(100vh - 414px - 14px);
+    overflow-y: auto;
     display: grid;
     gap: 8px;
     padding: 7px;

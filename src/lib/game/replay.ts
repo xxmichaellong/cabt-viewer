@@ -5,6 +5,22 @@ export type ReplayPlayerInfo = {
   name: string;
 };
 
+export type MctsCandidate = {
+  optionIndex: number;
+  label: string;
+  visits: number;
+  visitShare: number;
+  q: number;
+  prior: number;
+  chosen: boolean;
+};
+
+export type MctsStepView = {
+  totalVisits: number;
+  optionCount: number;
+  candidates: MctsCandidate[];
+};
+
 export type ReplayStep = {
   index: number;
   label: string;
@@ -16,6 +32,7 @@ export type ReplayStep = {
   activePlayerIndex: number;
   type: string;
   payload: unknown;
+  mcts?: MctsStepView | null;
 };
 
 export type ReplaySnapshot = {
