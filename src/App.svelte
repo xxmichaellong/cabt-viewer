@@ -994,12 +994,16 @@
           step={replayStore.currentStep}
           stepIndex={replayStore.stepIndex}
           copiedForkPoint={replayStore.copiedForkPoint}
+          playing={replayStore.playing}
+          speed={replayStore.speedMs}
           setStep={(index) => replayStore.setStep(index)}
           setStateIndex={(index) => replayStore.setStateIndex(index)}
           previousStep={() => replayStore.previousStep()}
           nextStep={() => replayStore.nextStep()}
           firstStep={() => replayStore.firstStep()}
           lastStep={() => replayStore.lastStep()}
+          togglePlay={() => replayStore.togglePlay()}
+          setSpeed={(ms) => replayStore.setSpeed(ms)}
           copyForkPoint={() => void replayStore.copyForkPoint()}
         />
       {/if}

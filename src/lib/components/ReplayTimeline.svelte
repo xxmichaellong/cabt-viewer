@@ -7,12 +7,16 @@
     step: ReplayStep;
     stepIndex: number;
     copiedForkPoint?: boolean;
+    playing: boolean;
+    speed: number;
     setStep: (index: number) => void;
     setStateIndex: (index: number) => void;
     previousStep: () => void;
     nextStep: () => void;
     firstStep: () => void;
     lastStep: () => void;
+    togglePlay: () => void;
+    setSpeed: (ms: number) => void;
     copyForkPoint: () => void;
   };
 
@@ -21,14 +25,25 @@
     step,
     stepIndex,
     copiedForkPoint = false,
+    playing,
+    speed,
     setStep,
     setStateIndex,
     previousStep,
     nextStep,
     firstStep,
     lastStep,
+    togglePlay,
+    setSpeed,
     copyForkPoint,
   }: Props = $props();
+
+  const SPEEDS = [
+    { ms: 1600, label: '0.5×' },
+    { ms: 800, label: '1×' },
+    { ms: 400, label: '2×' },
+    { ms: 200, label: '4×' },
+  ];
 
   let maxStepIndex = $derived(Math.max(0, replay.steps.length - 1));
   let maxStateIndex = $derived(Math.max(0, replay.stateCount - 1));
@@ -46,6 +61,10 @@
     setStateIndex(Number((event.currentTarget as HTMLInputElement).value));
   }
 
+  function onSpeedChange(event: Event) {
+    setSpeed(Number((event.currentTarget as HTMLSelectElement).value));
+  }
+
   function formatPayload(payload: unknown): string {
     if (payload === null || payload === undefined) {
       return '';
@@ -60,6 +79,12 @@
     <span>{step.label}</span>
   </div>
   <div class="replay-controls" aria-label="Replay playback controls">
+    <button
+      class="play-toggle"
+      aria-label={playing ? 'Pause' : 'Play'}
+      aria-pressed={playing}
+      onclick={togglePlay}
+    >{playing ? '❚❚' : '▶'}</button>
     <button aria-label="First action" onclick={firstStep} disabled={stepIndex === 0}>|&lt;</button>
     <button aria-label="Previous action" onclick={previousStep} disabled={stepIndex === 0}>&lt;</button>
     <input
@@ -72,6 +97,11 @@
     />
     <button aria-label="Next action" onclick={nextStep} disabled={stepIndex >= maxStepIndex}>&gt;</button>
     <button aria-label="Last action" onclick={lastStep} disabled={stepIndex >= maxStepIndex}>&gt;|</button>
+    <select class="speed-select" aria-label="Playback speed" onchange={onSpeedChange}>
+      {#each SPEEDS as option (option.ms)}
+        <option value={option.ms} selected={option.ms === speed}>{option.label}</option>
+      {/each}
+    </select>
   </div>
 </section>
 
@@ -209,9 +239,24 @@
   .replay-controls {
     width: 100%;
     display: grid;
-    grid-template-columns: 32px 32px minmax(0, 1fr) 32px 32px;
+    grid-template-columns: 32px 32px 32px minmax(0, 1fr) 32px 32px auto;
     align-items: center;
     gap: 8px;
+  }
+
+  .play-toggle {
+    font-size: 12px;
+  }
+
+  .speed-select {
+    height: 30px;
+    padding: 0 4px;
+    border-radius: 5px;
+    border: 1px solid var(--input-border);
+    background: var(--input-bg);
+    color: var(--input-text);
+    font-size: 11px;
+    font-weight: 800;
   }
 
   .replay-controls button,

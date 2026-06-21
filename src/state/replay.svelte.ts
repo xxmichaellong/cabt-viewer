@@ -8,6 +8,9 @@ class ReplayStore {
   loading = $state(false);
   error = $state('');
   copiedForkPoint = $state(false);
+  playing = $state(false);
+  speedMs = $state(800);
+  private timer: ReturnType<typeof setInterval> | null = null;
 
   get currentStep(): ReplayStep | null {
     return this.replay?.steps[this.stepIndex] ?? null;
@@ -33,6 +36,7 @@ class ReplayStore {
     this.loading = true;
     this.error = '';
     this.copiedForkPoint = false;
+    this.pause();
     try {
       this.replay = await loadCabtReplay(id);
       this.stepIndex = 0;
@@ -46,6 +50,7 @@ class ReplayStore {
   }
 
   clear(): void {
+    this.pause();
     this.replay = null;
     this.stepIndex = 0;
     this.loading = false;
@@ -53,25 +58,85 @@ class ReplayStore {
     this.copiedForkPoint = false;
   }
 
-  setStep(index: number): void {
+  private applyStep(index: number): void {
     this.stepIndex = clampIndex(index, this.maxStepIndex);
     this.copiedForkPoint = false;
   }
 
+  // Manual navigation pauses auto-play; the playback timer uses applyStep directly
+  // so its own advances don't stop the loop.
+  setStep(index: number): void {
+    this.pause();
+    this.applyStep(index);
+  }
+
   nextStep(): void {
-    this.setStep(this.stepIndex + 1);
+    this.pause();
+    this.applyStep(this.stepIndex + 1);
   }
 
   previousStep(): void {
-    this.setStep(this.stepIndex - 1);
+    this.pause();
+    this.applyStep(this.stepIndex - 1);
   }
 
   firstStep(): void {
-    this.setStep(0);
+    this.pause();
+    this.applyStep(0);
   }
 
   lastStep(): void {
-    this.setStep(this.maxStepIndex);
+    this.pause();
+    this.applyStep(this.maxStepIndex);
+  }
+
+  play(): void {
+    if (!this.replay) {
+      return;
+    }
+    if (this.stepIndex >= this.maxStepIndex) {
+      this.applyStep(0); // replay a finished game from the top
+    }
+    this.playing = true;
+    this.startTimer();
+  }
+
+  pause(): void {
+    this.clearTimer();
+    this.playing = false;
+  }
+
+  togglePlay(): void {
+    if (this.playing) {
+      this.pause();
+    } else {
+      this.play();
+    }
+  }
+
+  setSpeed(ms: number): void {
+    this.speedMs = ms;
+    if (this.playing) {
+      this.startTimer(); // re-arm the interval at the new cadence
+    }
+  }
+
+  private startTimer(): void {
+    this.clearTimer();
+    this.timer = setInterval(() => {
+      if (this.stepIndex >= this.maxStepIndex) {
+        this.pause();
+        return;
+      }
+      this.applyStep(this.stepIndex + 1);
+    }, this.speedMs);
+  }
+
+  private clearTimer(): void {
+    if (this.timer !== null) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
   }
 
   setStateIndex(stateIndex: number): void {
