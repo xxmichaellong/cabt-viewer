@@ -7,3 +7,6 @@ node_modules
 .DS_Store
 sample_submission
 data
+
+# Generated ladder replay caches (ptcg-kaggle build_data.py harvest); tracked samples stay tracked
+public/game-logs/ladder-ep*.json
