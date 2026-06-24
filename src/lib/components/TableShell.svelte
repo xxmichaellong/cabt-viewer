@@ -15,10 +15,17 @@
 </section>
 
 <style>
+  .table-shell.replay-mode {
+    --analysis-w: min(32vw, 440px);   /* squeeze the board left, open a right-side analysis panel */
+    --replay-dock-h: 0px;             /* dock is now the right panel, so reclaim the bottom strip */
+  }
+
   .table-shell {
-    --board-card-w: clamp(58px, min(8vw, 8.1vh), 104px);
+    --analysis-w: 0px;
+    --stage-w: calc(100vw - var(--analysis-w));   /* board scales into the space left of the panel */
+    --board-card-w: clamp(58px, min(calc(var(--stage-w) * 0.08), 8.1vh), 104px);
     --card-w: var(--board-card-w);
-    --hand-card-w: min(clamp(96px, min(7.8vw, 14.5vh), 150px), calc(var(--board-card-w) * 1.55));
+    --hand-card-w: min(clamp(96px, min(calc(var(--stage-w) * 0.078), 14.5vh), 150px), calc(var(--board-card-w) * 1.55));
     --min-table-width: 760px;
     --board-row-gap: calc(var(--board-card-w) * 0.16);
     --active-gap: calc(var(--board-card-w) * 0.24);
@@ -42,7 +49,7 @@
     --board-edge-pad-x: var(--board-edge-pad);
     --board-content-inset-y: calc(var(--board-outline-pad-y) + var(--board-content-pad));
     --board-content-inset-x: calc(var(--board-edge-pad-x) + var(--board-content-pad));
-    width: max(100vw, var(--min-table-width));
+    width: max(var(--stage-w), var(--min-table-width));
     min-width: var(--min-table-width);
     min-height: 100vh;
     position: relative;

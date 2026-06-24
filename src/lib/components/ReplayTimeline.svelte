@@ -146,15 +146,20 @@
 <style>
   .replay-dock {
     position: absolute;
-    left: 0;
-    right: var(--board-right-rail);
+    /* Right-side analysis panel: fills the strip the board-squeeze (--analysis-w) freed. */
+    left: auto;
+    right: calc(-1 * var(--analysis-w, 0px));
+    top: 0;
     bottom: 0;
+    width: var(--analysis-w, 360px);
     z-index: 12;
-    height: var(--replay-dock-h, 48px);
     display: flex;
-    align-items: center;
-    padding: 7px 16px;
-    border-top: 1px solid var(--surface-toolbar-border);
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    overflow-y: auto;
+    padding: 14px;
+    border-left: 1px solid var(--surface-toolbar-border);
     background: var(--surface-toolbar-bg);
     color: var(--text-primary);
     box-shadow: var(--surface-toolbar-shadow);

@@ -7,7 +7,7 @@
 
   let { mcts }: Props = $props();
 
-  const MAX_ROWS = 6;
+  const MAX_ROWS = 14;
   let rows = $derived(mcts.candidates.slice(0, MAX_ROWS));
   let hiddenCount = $derived(Math.max(0, mcts.candidates.length - rows.length));
 
@@ -59,8 +59,8 @@
 <style>
   .mcts {
     display: grid;
-    gap: 6px;
-    padding-top: 6px;
+    gap: 8px;
+    padding-top: 8px;
     border-top: 1px solid var(--surface-toolbar-border);
   }
 
@@ -69,11 +69,11 @@
     align-items: baseline;
     justify-content: space-between;
     gap: 6px;
-    font-size: 11px;
+    font-size: 13px;
   }
 
   .mcts-head strong {
-    font-size: 12px;
+    font-size: 15px;
   }
 
   .mcts-head span {
@@ -133,7 +133,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 700;
   }
 
@@ -148,9 +148,9 @@
   .stats {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: 8px;
     color: var(--text-secondary);
-    font-size: 10px;
+    font-size: 12px;
     font-variant-numeric: tabular-nums;
   }
 
