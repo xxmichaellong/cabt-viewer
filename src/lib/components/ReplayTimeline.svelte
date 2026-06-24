@@ -146,20 +146,21 @@
 <style>
   .replay-dock {
     position: absolute;
-    /* Right-side analysis panel: fills the strip the board-squeeze (--analysis-w) freed. */
-    left: auto;
-    right: calc(-1 * var(--analysis-w, 0px));
-    top: 0;
+    /* Bottom playback strip: spans the board (clearing the toolbar rail) and sits in the
+       bottom inset the shell already reserves via --replay-dock-h. Pinned INSIDE the shell so
+       overflow:hidden never clips it (the old right-rail at right:-analysis-w sat outside it). */
+    left: 0;
+    right: var(--board-right-rail, 0px);
     bottom: 0;
-    width: var(--analysis-w, 360px);
+    top: auto;
+    height: var(--replay-dock-h, 56px);
     z-index: 12;
     display: flex;
-    flex-direction: column;
-    align-items: stretch;
+    flex-direction: row;
+    align-items: center;
     gap: 10px;
-    overflow-y: auto;
-    padding: 14px;
-    border-left: 1px solid var(--surface-toolbar-border);
+    padding: 8px 16px;
+    border-top: 1px solid var(--surface-toolbar-border);
     background: var(--surface-toolbar-bg);
     color: var(--text-primary);
     box-shadow: var(--surface-toolbar-shadow);
@@ -201,7 +202,8 @@
     right: 14px;
     z-index: 9;
     width: 204px;
-    max-height: calc(100vh - 414px - 14px);
+    /* Stop short of the bottom playback strip so the two never overlap. */
+    max-height: calc(100vh - 414px - var(--replay-dock-h, 56px) - 14px);
     overflow-y: auto;
     display: grid;
     gap: 8px;
@@ -324,7 +326,7 @@
 
   @media (max-width: 860px) {
     .replay-dock {
-      right: 0;
+      right: 0;          /* narrow: let the strip span the full width (toolbar sits up top) */
       padding: 7px 10px;
     }
 

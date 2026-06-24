@@ -16,8 +16,10 @@
 
 <style>
   .table-shell.replay-mode {
-    --analysis-w: min(32vw, 440px);   /* squeeze the board left, open a right-side analysis panel */
-    --replay-dock-h: 0px;             /* dock is now the right panel, so reclaim the bottom strip */
+    /* Replay UI = a full-width playback strip pinned to the board's reserved bottom inset,
+       plus the top-right info panel. No board squeeze: the controls live INSIDE the shell, so
+       overflow:hidden can no longer clip them off-screen (the old right-rail did exactly that). */
+    --replay-dock-h: 56px;            /* height reserved at the bottom for the playback strip */
   }
 
   .table-shell {
@@ -58,10 +60,6 @@
     background: var(--app-backdrop-bg);
     -webkit-user-select: none;
     user-select: none;
-  }
-
-  .table-shell.replay-mode {
-    --replay-dock-h: 48px;
   }
 
   .table-shell :global(*) {
