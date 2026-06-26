@@ -15,6 +15,7 @@
   import PromptDock from './lib/components/prompts/PromptDock.svelte';
   import PromptHost from './lib/components/prompts/PromptHost.svelte';
   import ReplayTimeline from './lib/components/ReplayTimeline.svelte';
+  import SearchDock from './lib/components/SearchDock.svelte';
   import SetupDock from './lib/components/SetupDock.svelte';
   import TableShell from './lib/components/TableShell.svelte';
   import Toolbar from './lib/components/Toolbar.svelte';
@@ -956,6 +957,7 @@
         refreshCatalog={() => void refreshCatalog()}
       />
   {:else if bottomPlayer && topPlayer}
+    <div class="table-layout" class:with-analysis={replayMode}>
     <TableShell {debugZones} {replayMode}>
       <GameStatus
         phaseLabel={game.phaseLabel}
@@ -979,6 +981,7 @@
         promptActive={replayMode || !!currentPrompt}
         {gameFinished}
         {error}
+        {replayMode}
         {resetPerspective}
         {passTurn}
         {concede}
@@ -993,18 +996,15 @@
           replay={replayStore.replay}
           step={replayStore.currentStep}
           stepIndex={replayStore.stepIndex}
-          copiedForkPoint={replayStore.copiedForkPoint}
           playing={replayStore.playing}
           speed={replayStore.speedMs}
           setStep={(index) => replayStore.setStep(index)}
-          setStateIndex={(index) => replayStore.setStateIndex(index)}
           previousStep={() => replayStore.previousStep()}
           nextStep={() => replayStore.nextStep()}
           firstStep={() => replayStore.firstStep()}
           lastStep={() => replayStore.lastStep()}
           togglePlay={() => replayStore.togglePlay()}
           setSpeed={(ms) => replayStore.setSpeed(ms)}
-          copyForkPoint={() => void replayStore.copyForkPoint()}
         />
       {/if}
 
@@ -1137,6 +1137,28 @@
         />
       </BoardLayer>
     </TableShell>
+
+    {#if replayMode && replayStore.replay && replayStore.currentStep}
+      <SearchDock
+        mcts={replayStore.currentDecisionStep?.mcts ?? null}
+        decisionOrdinal={replayStore.currentDecisionOrdinal}
+        decisionCount={replayStore.decisionCount}
+        decisionTurn={replayStore.currentDecisionStep?.turn}
+        decisionLabel={replayStore.currentDecisionStep?.label}
+        hasPrev={replayStore.decisionIndices.some((index) => index < replayStore.stepIndex)}
+        hasNext={replayStore.decisionIndices.some((index) => index > replayStore.stepIndex)}
+        currentTurn={replayStore.currentStep.turn}
+        stateValue={`${replayStore.currentStep.stateIndex} / ${Math.max(0, replayStore.replay.stateCount - 1)}`}
+        copiedForkPoint={replayStore.copiedForkPoint}
+        onPrev={() => replayStore.previousDecision()}
+        onNext={() => replayStore.nextDecision()}
+        onPlayResult={() => replayStore.showDecisionResult()}
+        copyForkPoint={() => void replayStore.copyForkPoint()}
+        replayName={replayStore.replay.name}
+        playerLabel={replayStore.replay.players.map((player) => player.name).join(' vs ')}
+      />
+    {/if}
+    </div>
   {:else}
     <AppHeader />
     <section class="replay-loading-screen">
@@ -1151,6 +1173,26 @@
 {/if}
 
 <style>
+  /* Replay table + search dock laid out as a row so the analysis owns a real column on the
+     right (instead of floating over the board). The board column reads --analysis-dock-w as
+     its own --analysis-w (see TableShell), so it shrinks to leave the dock its width. */
+  .table-layout.with-analysis {
+    display: flex;
+    align-items: stretch;
+    min-height: 100vh;
+    --analysis-dock-w: clamp(260px, 22vw, 340px);
+  }
+
+  @media (max-width: 1080px) {
+    .table-layout.with-analysis {
+      --analysis-dock-w: 0px;
+    }
+
+    .table-layout.with-analysis :global(.search-dock) {
+      display: none;
+    }
+  }
+
   .replay-loading-screen {
     min-height: 100vh;
     display: grid;

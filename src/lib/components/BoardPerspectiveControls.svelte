@@ -5,6 +5,8 @@
     boardScaleY: number;
     boardLift: number;
     resetPerspective: () => void;
+    /** When true, render the sliders inline (no ⚙ summary) for nesting inside another menu. */
+    inline?: boolean;
   };
 
   let {
@@ -13,11 +15,11 @@
     boardScaleY = $bindable(),
     boardLift = $bindable(),
     resetPerspective,
+    inline = false,
   }: Props = $props();
 </script>
 
-<details class="board-perspective-controls">
-  <summary aria-label="Board perspective settings" title="Board perspective settings">⚙</summary>
+{#snippet menu()}
   <div class="board-perspective-menu">
     <strong>Board perspective</strong>
     <label>
@@ -42,7 +44,16 @@
     </label>
     <button type="button" onclick={() => resetPerspective()}>Reset</button>
   </div>
-</details>
+{/snippet}
+
+{#if inline}
+  {@render menu()}
+{:else}
+  <details class="board-perspective-controls">
+    <summary aria-label="Board perspective settings" title="Board perspective settings">⚙</summary>
+    {@render menu()}
+  </details>
+{/if}
 
 <style>
   .board-perspective-controls {

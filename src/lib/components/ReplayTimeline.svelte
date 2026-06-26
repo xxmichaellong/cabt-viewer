@@ -1,41 +1,34 @@
 <script lang="ts">
   import type { ReplaySnapshot, ReplayStep } from '../game/replay';
-  import MctsPanel from './MctsPanel.svelte';
 
   type Props = {
     replay: ReplaySnapshot;
     step: ReplayStep;
     stepIndex: number;
-    copiedForkPoint?: boolean;
     playing: boolean;
     speed: number;
     setStep: (index: number) => void;
-    setStateIndex: (index: number) => void;
     previousStep: () => void;
     nextStep: () => void;
     firstStep: () => void;
     lastStep: () => void;
     togglePlay: () => void;
     setSpeed: (ms: number) => void;
-    copyForkPoint: () => void;
   };
 
   let {
     replay,
     step,
     stepIndex,
-    copiedForkPoint = false,
     playing,
     speed,
     setStep,
-    setStateIndex,
     previousStep,
     nextStep,
     firstStep,
     lastStep,
     togglePlay,
     setSpeed,
-    copyForkPoint,
   }: Props = $props();
 
   const SPEEDS = [
@@ -46,31 +39,13 @@
   ];
 
   let maxStepIndex = $derived(Math.max(0, replay.steps.length - 1));
-  let maxStateIndex = $derived(Math.max(0, replay.stateCount - 1));
-  let actionValue = $derived(step.actionIndex === null ? 'Initial' : `${step.actionIndex + 1} / ${replay.actionCount}`);
-  let stateValue = $derived(`${step.stateIndex} / ${maxStateIndex}`);
-  let payloadPreview = $derived(formatPayload(step.payload));
-  let createdLabel = $derived(Number.isFinite(replay.created) ? new Date(replay.created).toLocaleString() : '');
-  let playerLabel = $derived(replay.players.map((player) => player.name).join(' vs '));
 
   function onStepInput(event: Event) {
     setStep(Number((event.currentTarget as HTMLInputElement).value));
   }
 
-  function onStateInput(event: Event) {
-    setStateIndex(Number((event.currentTarget as HTMLInputElement).value));
-  }
-
   function onSpeedChange(event: Event) {
     setSpeed(Number((event.currentTarget as HTMLSelectElement).value));
-  }
-
-  function formatPayload(payload: unknown): string {
-    if (payload === null || payload === undefined) {
-      return '';
-    }
-    const json = JSON.stringify(payload);
-    return json.length > 180 ? `${json.slice(0, 177)}...` : json;
   }
 </script>
 
@@ -105,52 +80,13 @@
   </div>
 </section>
 
-<aside class="replay-details" aria-label="Replay details">
-  <div class="replay-meta">
-    <strong>{replay.name}</strong>
-    <span>{playerLabel}</span>
-    <span>{createdLabel}</span>
-  </div>
-
-  <div class="replay-readout">
-    <span>Action <b>{actionValue}</b></span>
-    <span>State <b>{stateValue}</b></span>
-    <span>Turn <b>{step.turn}</b></span>
-    <span>{step.label}</span>
-  </div>
-
-  <div class="state-controls">
-    <label>
-      State
-      <input
-        aria-label="State index"
-        type="number"
-        min="0"
-        max={maxStateIndex}
-        value={step.stateIndex}
-        oninput={onStateInput}
-      />
-    </label>
-    <button onclick={copyForkPoint}>{copiedForkPoint ? 'Fork point copied' : 'Copy fork point'}</button>
-  </div>
-
-  {#if payloadPreview}
-    <pre>{payloadPreview}</pre>
-  {/if}
-
-  {#if step.mcts}
-    <MctsPanel mcts={step.mcts} />
-  {/if}
-</aside>
-
 <style>
   .replay-dock {
     position: absolute;
-    /* Bottom playback strip: spans the board (clearing the toolbar rail) and sits in the
-       bottom inset the shell already reserves via --replay-dock-h. Pinned INSIDE the shell so
-       overflow:hidden never clips it (the old right-rail at right:-analysis-w sat outside it). */
+    /* Bottom playback strip: spans the board column and sits in the bottom inset the shell
+       reserves via --replay-dock-h. Pinned INSIDE the shell so overflow:hidden never clips it. */
     left: 0;
-    right: var(--board-right-rail, 0px);
+    right: 0;
     bottom: 0;
     top: auto;
     height: var(--replay-dock-h, 56px);
@@ -196,53 +132,6 @@
     line-height: 1;
   }
 
-  .replay-details {
-    position: absolute;
-    top: 414px;
-    right: 14px;
-    z-index: 9;
-    width: 204px;
-    /* Stop short of the bottom playback strip so the two never overlap. */
-    max-height: calc(100vh - 414px - var(--replay-dock-h, 56px) - 14px);
-    overflow-y: auto;
-    display: grid;
-    gap: 8px;
-    padding: 7px;
-    border: 1px solid var(--surface-toolbar-border);
-    border-radius: 6px;
-    background: var(--surface-toolbar-bg);
-    color: var(--text-primary);
-    box-shadow: var(--surface-toolbar-shadow);
-    backdrop-filter: blur(var(--backdrop-blur));
-  }
-
-  .replay-meta,
-  .replay-readout,
-  .state-controls {
-    display: grid;
-    gap: 5px;
-    min-width: 0;
-    font-size: 11px;
-    line-height: 1.2;
-  }
-
-  .replay-meta span,
-  .replay-readout span {
-    min-width: 0;
-    overflow: hidden;
-    color: var(--text-secondary);
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .replay-meta strong {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 12px;
-  }
-
   .replay-controls {
     width: 100%;
     display: grid;
@@ -266,8 +155,10 @@
     font-weight: 800;
   }
 
-  .replay-controls button,
-  .state-controls button {
+  .replay-controls button {
+    width: 32px;
+    height: 30px;
+    padding: 0;
     min-width: 0;
     border-radius: 5px;
     border: 1px solid var(--button-border);
@@ -277,56 +168,12 @@
     font-weight: 800;
   }
 
-  .replay-controls button {
-    width: 32px;
-    height: 30px;
-    padding: 0;
-  }
-
-  .state-controls {
-    align-items: stretch;
-  }
-
-  .state-controls label {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    color: var(--text-secondary);
-  }
-
-  .state-controls input {
-    width: 100%;
-    height: 26px;
-    border: 1px solid var(--input-border);
-    border-radius: var(--radius-sm);
-    background: var(--input-bg);
-    color: var(--input-text);
-    font: inherit;
-    font-weight: 800;
-  }
-
-  .state-controls button {
-    height: 26px;
-    padding: 0 9px;
-  }
-
   input[type='range'] {
     width: 100%;
   }
 
-  pre {
-    margin: 0;
-    max-height: 66px;
-    overflow: auto;
-    color: var(--text-secondary);
-    white-space: pre-wrap;
-    word-break: break-word;
-    font-size: 10px;
-  }
-
   @media (max-width: 860px) {
     .replay-dock {
-      right: 0;          /* narrow: let the strip span the full width (toolbar sits up top) */
       padding: 7px 10px;
     }
 
@@ -338,10 +185,6 @@
     .replay-caption span {
       padding: 6px 10px;
       font-size: 12px;
-    }
-
-    .replay-details {
-      display: none;
     }
   }
 </style>

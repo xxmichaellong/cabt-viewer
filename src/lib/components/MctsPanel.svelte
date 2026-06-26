@@ -3,9 +3,11 @@
 
   type Props = {
     mcts: MctsStepView;
+    /** When provided, the played move becomes a button that jumps the board to its result. */
+    onPlayResult?: () => void;
   };
 
-  let { mcts }: Props = $props();
+  let { mcts, onPlayResult }: Props = $props();
 
   const MAX_ROWS = 14;
   let rows = $derived(mcts.candidates.slice(0, MAX_ROWS));
@@ -46,7 +48,15 @@
           <span>{percent(row.visitShare)}</span>
           <span>q {signed(row.q)}</span>
           <span>p {row.prior.toFixed(2)}</span>
-          {#if row.chosen}<span class="pick">● played</span>{/if}
+          {#if row.chosen}
+            {#if onPlayResult}
+              <button class="pick" type="button" onclick={onPlayResult} title="Jump to the state this move produced">
+                ● played → result
+              </button>
+            {:else}
+              <span class="pick">● played</span>
+            {/if}
+          {/if}
         </div>
       </li>
     {/each}
@@ -157,6 +167,20 @@
   .stats .pick {
     color: var(--accent-base);
     font-weight: 800;
+  }
+
+  button.pick {
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    font-weight: 800;
+    line-height: inherit;
+    cursor: pointer;
+  }
+
+  button.pick:hover {
+    text-decoration: underline;
   }
 
   .mcts-more {

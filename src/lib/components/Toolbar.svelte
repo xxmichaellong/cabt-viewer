@@ -17,6 +17,7 @@
     promptActive?: boolean;
     gameFinished?: boolean;
     error?: string;
+    replayMode?: boolean;
     resetPerspective: () => void;
     passTurn: () => void;
     concede: () => void;
@@ -40,6 +41,7 @@
     promptActive = false,
     gameFinished = false,
     error = '',
+    replayMode = false,
     resetPerspective,
     passTurn,
     concede,
@@ -50,6 +52,43 @@
   }: Props = $props();
 </script>
 
+{#if replayMode}
+  <div class="toolbar-gear-wrap">
+    <details class="toolbar-gear">
+      <summary aria-label="Replay settings" title="Settings">⚙</summary>
+      <div class="toolbar-gear-menu">
+        <button class="switch-sides" disabled={switchDisabled} onclick={switchSides}>Switch sides</button>
+        <BoardPerspectiveControls
+          inline
+          bind:boardTilt
+          bind:boardPerspective
+          bind:boardScaleY
+          bind:boardLift
+          {resetPerspective}
+        />
+        <label class="select-row">
+          Theme
+          <select bind:value={themePreference} aria-label="Theme preference">
+            <option value="system">System</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </label>
+        <label>
+          <input type="checkbox" bind:checked={debugZones} />
+          Debug zones
+        </label>
+        <label>
+          <input type="checkbox" bind:checked={showLogs} />
+          Show logs
+        </label>
+      </div>
+    </details>
+    {#if error}
+      <span class="inline-error">{labelFor(error)}</span>
+    {/if}
+  </div>
+{:else}
 <div class="table-toolbar">
   <BoardPerspectiveControls
     bind:boardTilt
@@ -92,6 +131,7 @@
     <span class="inline-error">{labelFor(error)}</span>
   {/if}
 </div>
+{/if}
 
 <style>
   .table-toolbar {
@@ -165,5 +205,92 @@
     background: var(--danger-bg);
     color: var(--danger-strong);
     font-size: 11px;
+  }
+
+  /* Replay mode: the whole toolbar collapses to one ⚙ gear. */
+  .toolbar-gear-wrap {
+    position: absolute;
+    top: 54px;
+    right: 14px;
+    z-index: 8;
+    display: grid;
+    justify-items: end;
+    gap: 8px;
+  }
+
+  .toolbar-gear {
+    position: relative;
+  }
+
+  .toolbar-gear summary {
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    border: 1px solid var(--surface-toolbar-border);
+    border-radius: 8px;
+    background: var(--surface-toolbar-bg);
+    box-shadow: var(--surface-toolbar-shadow);
+    backdrop-filter: blur(var(--backdrop-blur));
+    color: var(--button-text);
+    cursor: pointer;
+    font-size: 18px;
+    line-height: 1;
+    user-select: none;
+  }
+
+  .toolbar-gear summary::marker,
+  .toolbar-gear summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .toolbar-gear-menu {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    width: 184px;
+    display: grid;
+    gap: 8px;
+    padding: 9px;
+    border: 1px solid var(--surface-toolbar-border);
+    border-radius: 8px;
+    background: var(--surface-toolbar-bg);
+    box-shadow: var(--surface-toolbar-shadow);
+    backdrop-filter: blur(var(--backdrop-blur));
+  }
+
+  .toolbar-gear-menu label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-secondary);
+    font-size: 11px;
+    line-height: 1.2;
+  }
+
+  .toolbar-gear-menu label.select-row {
+    justify-content: space-between;
+  }
+
+  .toolbar-gear-menu select {
+    min-width: 0;
+    border: 1px solid var(--input-border);
+    border-radius: var(--radius-sm);
+    background: var(--input-bg);
+    color: var(--input-text);
+    font: inherit;
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  .toolbar-gear-menu .switch-sides {
+    width: 100%;
+    border-radius: 6px;
+    padding: 7px;
+    border: 1px solid var(--button-border);
+    background: var(--button-bg);
+    color: var(--button-text);
+    font-size: 12px;
+    font-weight: 800;
   }
 </style>
