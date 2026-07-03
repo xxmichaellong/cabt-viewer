@@ -952,6 +952,8 @@
           stepIndex={replayStore.stepIndex}
           copiedForkPoint={replayStore.copiedForkPoint}
           isPlaying={replayStore.isPlaying}
+          playbackSpeed={replayStore.playbackSpeed}
+          setPlaybackSpeed={(speed) => replayStore.setPlaybackSpeed(speed)}
           setStep={(index) => replayStore.setStep(index)}
           setStateIndex={(index) => replayStore.setStateIndex(index)}
           previousStep={() => replayStore.previousStep()}
