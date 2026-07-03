@@ -8,6 +8,8 @@
     stepIndex: number;
     copiedForkPoint?: boolean;
     isPlaying?: boolean;
+    playbackSpeed?: number;
+    setPlaybackSpeed?: (speed: number) => void;
     setStep: (index: number) => void;
     setStateIndex: (index: number) => void;
     previousStep: () => void;
@@ -26,6 +28,8 @@
     stepIndex,
     copiedForkPoint = false,
     isPlaying = false,
+    playbackSpeed = 1,
+    setPlaybackSpeed = () => {},
     setStep,
     setStateIndex,
     previousStep,
@@ -36,6 +40,13 @@
     backToReplayHome,
     copyForkPoint,
   }: Props = $props();
+
+  const SPEEDS = [
+    { value: 0.5, label: '0.5×' },
+    { value: 1, label: '1×' },
+    { value: 2, label: '2×' },
+    { value: 4, label: '4×' },
+  ];
 
   let maxStepIndex = $derived(Math.max(0, replay.steps.length - 1));
   let maxStateIndex = $derived(Math.max(0, replay.stateCount - 1));
@@ -95,6 +106,15 @@
     />
     <button aria-label="Next action" onclick={nextStep} disabled={stepIndex >= maxStepIndex}>&gt;</button>
     <button aria-label="Last action" onclick={lastStep} disabled={stepIndex >= maxStepIndex}>&gt;|</button>
+    <select
+      class="speed-select"
+      aria-label="Playback speed"
+      onchange={(event) => setPlaybackSpeed(Number((event.currentTarget as HTMLSelectElement).value))}
+    >
+      {#each SPEEDS as option (option.value)}
+        <option value={option.value} selected={option.value === playbackSpeed}>{option.label}</option>
+      {/each}
+    </select>
   </div>
 </section>
 
@@ -244,7 +264,7 @@
   .replay-controls {
     width: 100%;
     display: grid;
-    grid-template-columns: 32px 32px 36px minmax(0, 1fr) 32px 32px;
+    grid-template-columns: 32px 32px 36px minmax(0, 1fr) 32px 32px auto;
     align-items: center;
     gap: 8px;
   }
@@ -264,6 +284,17 @@
     width: 32px;
     height: 30px;
     padding: 0;
+  }
+
+  .replay-controls .speed-select {
+    height: 30px;
+    padding: 0 4px;
+    border-radius: 5px;
+    border: 1px solid var(--input-border);
+    background: var(--input-bg);
+    color: var(--input-text);
+    font-size: 11px;
+    font-weight: 800;
   }
 
   .replay-controls .playback-toggle {

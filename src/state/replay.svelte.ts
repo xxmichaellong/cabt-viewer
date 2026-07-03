@@ -11,10 +11,19 @@ class ReplayStore {
   error = $state('');
   copiedForkPoint = $state(false);
   isPlaying = $state(false);
+  /** Playback speed multiplier (0.5x-4x). Divides the per-step delay; animations still render. */
+  playbackSpeed = $state(1);
 
   private playbackTimer: ReturnType<typeof setTimeout> | null = null;
   private animationPhaseTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly playbackDelayMs = 850;
+
+  setPlaybackSpeed(speed: number): void {
+    this.playbackSpeed = Math.min(4, Math.max(0.25, speed));
+    if (this.isPlaying) {
+      this.schedulePlaybackStep();
+    }
+  }
 
   get currentStep(): ReplayStep | null {
     return this.replay?.steps[this.stepIndex] ?? null;
@@ -296,7 +305,7 @@ class ReplayStore {
         return;
       }
       this.nextStep();
-    }, replayStepPlaybackDelayMs(this.currentStep, this.playbackDelayMs));
+    }, Math.max(120, Math.round(replayStepPlaybackDelayMs(this.currentStep, this.playbackDelayMs) / this.playbackSpeed)));
   }
 
   private scheduleAnimationPhase(): void {
