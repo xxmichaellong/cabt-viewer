@@ -43,6 +43,8 @@ class ReplayStore {
   // scopes so their teardown never runs, and each sprite then drains only on its
   // own fixed cleanup timer). See docs/audit-2026-07-09-cluster-rules.md.
   scrubbing = $state(false);
+  /** Playback speed multiplier (0.5x-4x). Divides the per-step delay; animations still render. */
+  playbackSpeed = $state(1);
 
   private playbackTimer: ReturnType<typeof setTimeout> | null = null;
   private animationPhaseTimer: ReturnType<typeof setTimeout> | null = null;
@@ -55,6 +57,13 @@ class ReplayStore {
   private static readonly SCRUB_DETECT_MS = 120;
   // Resume normal choreography this long after the last navigation settles.
   private static readonly SCRUB_DEBOUNCE_MS = 150;
+
+  setPlaybackSpeed(speed: number): void {
+    this.playbackSpeed = Math.min(4, Math.max(0.25, speed));
+    if (this.isPlaying) {
+      this.schedulePlaybackStep();
+    }
+  }
 
   get currentStep(): ReplayStep | null {
     return this.replay?.steps[this.stepIndex] ?? null;
@@ -294,7 +303,7 @@ class ReplayStore {
         return;
       }
       this.nextStep();
-    }, replayStepPlaybackDelayMs(this.currentStep, this.playbackDelayMs));
+    }, Math.max(120, Math.round(replayStepPlaybackDelayMs(this.currentStep, this.playbackDelayMs) / this.playbackSpeed)));
   }
 
   private scheduleAnimationPhase(): void {
