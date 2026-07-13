@@ -250,8 +250,10 @@
     right: 0;
     z-index: 30;
     display: flex;
+    flex-wrap: wrap;              /* narrow windows: nav/filters/tools drop to a second row
+                                     instead of crushing the title and overflowing the column */
     align-items: center;
-    gap: 14px;
+    gap: 4px 10px;
     padding: 7px 12px;
     border-bottom: 1px solid var(--surface-toolbar-border);
     background: var(--surface-toolbar-bg);

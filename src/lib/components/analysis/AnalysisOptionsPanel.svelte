@@ -107,6 +107,14 @@
     gap: 6px;
   }
 
+  /* Grid tracks size to items' INTRINSIC width by default — a nowrap row label would blow
+     the panel past its column. min-width: 0 at every grid level keeps tracks in the box. */
+  header,
+  ol,
+  li {
+    min-width: 0;
+  }
+
   header {
     display: flex;
     align-items: baseline;

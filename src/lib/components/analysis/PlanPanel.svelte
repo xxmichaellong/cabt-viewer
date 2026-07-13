@@ -68,6 +68,11 @@
     background: var(--accent-soft);
   }
 
+  /* Keep intrinsic (nowrap) content from blowing the panel's grid tracks. */
+  .plan > :global(*) {
+    min-width: 0;
+  }
+
   .plan-head {
     display: flex;
     align-items: baseline;
