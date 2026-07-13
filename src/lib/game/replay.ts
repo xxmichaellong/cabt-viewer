@@ -36,10 +36,36 @@ export type RankerCandidate = {
   chosen: boolean;
 };
 
+/** The higher-level prize-map / knockout-path plan for a board — emitted with PLANNER=1 by
+    run/rulebased/capture_option_ranker.py (computed in run/rulebased/plan.py). A separate reasoning
+    layer over the per-prompt ranker: which pieces take all 6 prizes, ranked by how crucial they are. */
+export type PlanCrucialPiece = {
+  piece: string; // e.g. "Phantom Dive"
+  criticality: number; // marginal turns lost if this piece is missing (× setup uncertainty)
+  secured: boolean; // usable this turn (vs MISSING → grab)
+};
+
+export type PlanKo = {
+  name: string; // opponent Pokémon this line KOs
+  prize: number; // prizes it yields (1/2/3)
+  turn: number; // which plan turn
+};
+
+export type PlanView = {
+  render: string; // one-line summary
+  turns: number | null; // turns to take the shown prizes (null = not reachable in the horizon)
+  crucial: PlanCrucialPiece[];
+  koSet: PlanKo[];
+  neededPieces: string[]; // grab off Ultra Ball / Poffin
+  attackKosActive: boolean;
+  givePrizes: boolean; // a self-KO is part of the line
+};
+
 export type RankerStepView = {
   context?: string; // SelectContext name, e.g. "PLAY" / "ATTACK" / "SELECT_TARGET"
   optionCount: number;
   candidates: RankerCandidate[];
+  plan?: PlanView; // optional prize-map plan panel (PLANNER=1)
 };
 
 /** What governed one decision — either an MCTS search or the option-ranker. The `kind`

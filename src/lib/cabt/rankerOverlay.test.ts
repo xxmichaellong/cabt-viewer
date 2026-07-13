@@ -35,4 +35,25 @@ describe.skipIf(!hasFixture)('option-ranker decision overlay', () => {
       expect(sample.candidates.some((candidate) => candidate.chosen)).toBe(true);
     }
   });
+
+  it('surfaces the prize-map plan on ranker steps when the capture carried _plan (PLANNER=1)', () => {
+    const input = JSON.parse(readFileSync(fixture, 'utf8'));
+    const hasPlanFrame = (input.visualize as Array<Record<string, unknown>>).some(
+      (frame) => frame._plan && typeof frame._plan === 'object',
+    );
+    if (!hasPlanFrame) {
+      return; // capture without PLANNER=1 — nothing to assert
+    }
+    const snap = cabtReplayToSnapshot(input);
+    const planned = snap.steps
+      .map((step) => step.decision)
+      .find((d) => d?.kind === 'ranker' && d.plan && d.plan.crucial.length > 0);
+    expect(planned).toBeTruthy();
+    if (planned?.kind === 'ranker' && planned.plan) {
+      expect(typeof planned.plan.render).toBe('string');
+      expect(typeof planned.plan.crucial[0].piece).toBe('string');
+      expect(typeof planned.plan.crucial[0].criticality).toBe('number');
+      expect(typeof planned.plan.crucial[0].secured).toBe('boolean');
+    }
+  });
 });

@@ -20,6 +20,7 @@ import { type ActionTimelineEvent, type CardView, type GameView, type LogView, t
 import type {
   DecisionView,
   MctsStepView,
+  PlanView,
   RankerStepView,
   ReplayAnimationPhase,
   ReplaySnapshot,
@@ -120,6 +121,16 @@ type CabtVisualizeFrame = {
   _ranker?: RankerOption[];
   /** SelectContext name for the ranker decision (e.g. "PLAY", "ATTACK"). */
   _rankerContext?: string;
+  /** Optional prize-map plan (PLANNER=1), emitted by run/rulebased/capture_option_ranker.py. */
+  _plan?: {
+    render?: string;
+    turns?: number | null;
+    crucial?: Array<{ piece?: string; criticality?: number; secured?: boolean }>;
+    ko_set?: Array<{ name?: string; prize?: number; turn?: number }>;
+    needed_pieces?: string[];
+    attack_kos_active?: boolean;
+    give_prizes?: boolean;
+  };
   current: {
     turn: number;
     yourIndex: number;
@@ -633,7 +644,42 @@ function buildRankerView(frame: CabtVisualizeFrame): RankerStepView | null {
     reason: typeof option.reason === 'string' ? option.reason : '',
     chosen: option.chosen === true,
   }));
-  return { context: frame._rankerContext, optionCount: candidates.length, candidates };
+  return {
+    context: frame._rankerContext,
+    optionCount: candidates.length,
+    candidates,
+    plan: buildPlanView(frame._plan),
+  };
+}
+
+/** Normalize the Python `_plan` dict (snake_case) into a PlanView, or undefined when absent. */
+function buildPlanView(raw: CabtVisualizeFrame['_plan']): PlanView | undefined {
+  if (!raw || typeof raw !== 'object') {
+    return undefined;
+  }
+  const crucial = Array.isArray(raw.crucial)
+    ? raw.crucial.map((c) => ({
+        piece: typeof c.piece === 'string' ? c.piece : '',
+        criticality: Number(c.criticality) || 0,
+        secured: c.secured === true,
+      }))
+    : [];
+  const koSet = Array.isArray(raw.ko_set)
+    ? raw.ko_set.map((k) => ({
+        name: typeof k.name === 'string' ? k.name : '?',
+        prize: Number(k.prize) || 0,
+        turn: Number(k.turn) || 0,
+      }))
+    : [];
+  return {
+    render: typeof raw.render === 'string' ? raw.render : '',
+    turns: raw.turns == null ? null : Number(raw.turns),
+    crucial,
+    koSet,
+    neededPieces: Array.isArray(raw.needed_pieces) ? raw.needed_pieces.map(String) : [],
+    attackKosActive: raw.attack_kos_active === true,
+    givePrizes: raw.give_prizes === true,
+  };
 }
 
 /** The decision that governed this frame, if any. MCTS takes precedence; a frame carries
