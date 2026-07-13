@@ -60,6 +60,16 @@
     a.unknown .badge { background: var(--unk-bg); color: var(--unk-fg); border: 1px solid var(--unk-bd); }
     a.game .seed { font-weight: 650; font-size: 14px; }
     a.game .meta { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+    a.game .row2 { display: flex; align-items: baseline; gap: 8px; }
+    a.game .watch {
+      margin-left: auto; color: var(--accent); font-size: 11px; font-weight: 700;
+      padding: 1px 6px; border: 1px solid var(--border); border-radius: 5px;
+    }
+    a.game .watch:hover { border-color: var(--accent); }
+    a.game .chip {
+      color: var(--muted); font-size: 10px; border: 1px solid var(--border);
+      border-radius: 8px; padding: 0 6px;
+    }
     .empty, .error { color: var(--muted); margin-top: 24px; }
     .error { color: var(--loss-fg); }
   </style>
@@ -68,7 +78,7 @@
   <div class="wrap">
     <header>
       <h1>Option-ranker games</h1>
-      <p>Your Dragapult / Dusknoir deck vs each ladder bot. Click a game to open it in the replayer.</p>
+      <p>Your Dragapult / Dusknoir deck vs each ladder bot. Click a game to analyze it prompt-by-prompt, or <em>watch</em> it in the animated replayer.</p>
       <p class="hint">Regenerate after new captures: <code>python3 -m rulebased.build_viewer_index</code> then refresh.</p>
     </header>
     <main id="app"><p class="empty">Loading…</p></main>
@@ -113,13 +123,25 @@
         for (const g of gs) {
           const cls = g.won === true ? 'win' : g.won === false ? 'loss' : 'unknown';
           const outcome = g.won === true ? 'WIN' : g.won === false ? (g.draw ? 'DRAW' : 'LOSS') : '—';
+          const replayUrl = location.origin + '/game-logs/' + g.file;
           const a = document.createElement('a');
           a.className = 'game ' + cls;
-          a.href = '/?view=replay&replayUrl=' + location.origin + '/game-logs/' + g.file;
+          // Primary click = the analysis page; the small "watch" pill = the animated replayer.
+          a.href = '/?view=analyze&replayUrl=' + replayUrl;
+          const chips = [];
+          if (g.driver) chips.push('<span class="chip">' + g.driver + ' drove</span>');
+          if (g.prompts != null) chips.push('<span class="chip">' + g.prompts + ' prompts</span>');
+          if (g.mainDecisions != null) chips.push('<span class="chip">' + g.mainDecisions + ' MAIN</span>');
           a.innerHTML =
             '<span class="badge">' + outcome + '</span>' +
-            '<span class="seed">seed ' + g.seed + '</span>' +
+            '<span class="row2"><span class="seed">seed ' + g.seed + '</span>' + chips.join('') +
+            '<span class="watch" data-watch>watch ▸</span></span>' +
             '<span class="meta">' + (g.turns ?? '?') + ' turns · ' + (g.decisions ?? '?') + ' decisions</span>';
+          a.querySelector('[data-watch]').addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            location.href = '/?view=replay&replayUrl=' + replayUrl;
+          });
           list.appendChild(a);
         }
         section.appendChild(list);
