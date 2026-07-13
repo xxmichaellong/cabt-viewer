@@ -14,6 +14,7 @@
   import ImportScreen from './lib/components/ImportScreen.svelte';
   import LogPanel from './lib/components/LogPanel.svelte';
   import PlayerPanel from './lib/components/PlayerPanel.svelte';
+  import AnalysisPage from './lib/components/analysis/AnalysisPage.svelte';
   import PromptGallery from './lib/components/prompt-gallery/PromptGallery.svelte';
   import PromptDock from './lib/components/prompts/PromptDock.svelte';
   import PromptHost from './lib/components/prompts/PromptHost.svelte';
@@ -59,6 +60,9 @@
   type HomeMode = 'play' | 'logs';
 
   let showPromptGallery = initialSearchParam('view') === 'prompt-gallery';
+  // Analysis site (local-only): ?view=analyze mounts the prompt-by-prompt analysis page.
+  const analyzeMode = initialSearchParam('view') === 'analyze';
+  const analyzeReplayUrl = initialSearchParam('replayUrl');
   const initialReplayMode = initialSearchParam('view') === 'replay';
   let homeMode = $state<HomeMode>(initialReplayMode ? 'logs' : 'play');
   let lastKaggleDaySlug = $state(initialSearchParam('kaggleDay'));
@@ -856,6 +860,8 @@
 
 {#if showPromptGallery}
   <PromptGallery />
+{:else if analyzeMode}
+  <AnalysisPage replayUrl={analyzeReplayUrl} />
 {:else}
 <main>
   {#if replayMode && !game}
