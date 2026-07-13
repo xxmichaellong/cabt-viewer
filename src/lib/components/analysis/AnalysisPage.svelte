@@ -4,11 +4,17 @@
   // structured logic path, derived info, plan panel, and a serial-keyed board overlay.
   // The board is Charlie's own renderer (TableShell → BoardLayer → GameBoard) fed one
   // SETTLED view per prompt with all interactions no-op'd — see docs/analysis-site.md.
+  import ActiveFocus from '../ActiveFocus.svelte';
   import BoardLayer from '../BoardLayer.svelte';
   import GameBoard from '../GameBoard.svelte';
   import Hand from '../Hand.svelte';
   import PlayerPanel from '../PlayerPanel.svelte';
   import TableShell from '../TableShell.svelte';
+  import ZoneViewer from '../ZoneViewer.svelte';
+  import CardFocus from './CardFocus.svelte';
+  import { selectionStore } from '../../../state/selection.svelte';
+  import { zoneViewerStore } from '../../../state/zoneViewer.svelte';
+  import type { CardView } from '../../game/types';
   import AnalysisBoardOverlay from './AnalysisBoardOverlay.svelte';
   import AnalysisOptionsPanel from './AnalysisOptionsPanel.svelte';
   import DerivedPanel from './DerivedPanel.svelte';
@@ -27,6 +33,25 @@
   let boardHost = $state<HTMLElement | null>(null);
   let hoveredKoName = $state<string | null>(null);
 
+  // Collapsible side columns (persisted). TableShell reads --analysis-dock-w to size the board,
+  // so collapsing genuinely reclaims the width for the playmat.
+  function persisted(key: string, initial: boolean): boolean {
+    if (typeof window === 'undefined') return initial;
+    const raw = window.localStorage.getItem(key);
+    return raw === null ? initial : raw === '1';
+  }
+  let railCollapsed = $state(persisted('analysis.railCollapsed', false));
+  let panelsCollapsed = $state(persisted('analysis.panelsCollapsed', false));
+  function toggleRail(): void {
+    railCollapsed = !railCollapsed;
+    try { window.localStorage.setItem('analysis.railCollapsed', railCollapsed ? '1' : '0'); } catch { /* private mode */ }
+  }
+  function togglePanels(): void {
+    panelsCollapsed = !panelsCollapsed;
+    try { window.localStorage.setItem('analysis.panelsCollapsed', panelsCollapsed ? '1' : '0'); } catch { /* private mode */ }
+  }
+  let dockWidth = $derived((railCollapsed ? 26 : 250) + (panelsCollapsed ? 26 : 390));
+
   $effect(() => {
     const url = replayUrl;
     if (url) {
@@ -44,6 +69,25 @@
   let watchUrl = $derived(
     `/?view=replay&replayUrl=${encodeURIComponent(analysisStore.replayUrl)}`,
   );
+
+  // Card close-ups (display-only reuse of the replayer's overlays; see docs/analysis-site.md):
+  // board slot → ActiveFocus, discard/lost/stadium pile → ZoneViewer, hand card → CardFocus.
+  let focusedHandCard = $state<CardView | null>(null);
+  let focusedSlot = $derived(selectionStore.focusedSlot);
+  let viewedCards = $derived(view ? zoneViewerStore.cardsFor(view) : []);
+
+  $effect(() => {
+    void prompt?.frameIndex;      // navigating prompts dismisses any stale overlay
+    selectionStore.clearFocus();
+    zoneViewerStore.close();
+    focusedHandCard = null;
+  });
+
+  function closeOverlays(): void {
+    selectionStore.clearFocus();
+    zoneViewerStore.close();
+    focusedHandCard = null;
+  }
 
   const FILTERS: Array<{ id: PromptFilter; label: string; title: string }> = [
     { id: 'ours', label: 'our prompts', title: 'Every prompt our agent answered' },
@@ -69,6 +113,8 @@
       } else {
         analysisStore.previous();
       }
+    } else if (event.key === 'Escape') {
+      closeOverlays();
     }
   }
 </script>
@@ -86,12 +132,16 @@
 {:else if prompt && view}
   {@const bottomPlayer = view.players[0]}
   {@const topPlayer = view.players[1]}
-  <div class="analysis-layout">
-    <TurnFlow
-      groups={analysisStore.turnGroups}
-      currentFrameIndex={prompt.frameIndex}
-      gotoFrame={(frameIndex) => analysisStore.gotoFrame(frameIndex)}
-    />
+  <div class="analysis-layout" style={`--analysis-dock-w: ${dockWidth}px`}>
+    {#if railCollapsed}
+      <button class="strip rail-strip" onclick={toggleRail} title="Show the turn rail">turns ▸</button>
+    {:else}
+      <TurnFlow
+        groups={analysisStore.turnGroups}
+        currentFrameIndex={prompt.frameIndex}
+        gotoFrame={(frameIndex) => analysisStore.gotoFrame(frameIndex)}
+      />
+    {/if}
 
     <div class="board-column" bind:this={boardHost}>
       <header class="analysis-head">
@@ -105,12 +155,14 @@
           {#if meta.driver}<small>· {meta.driver} drove</small>{/if}
         </strong>
         <nav class="prompt-nav">
+          <!-- Arrows sit together at the nav's fixed left edge (the nav has a FIXED width and the
+               label ellipsizes) so click targets never shift as the prompt text changes. -->
           <button onclick={() => analysisStore.previous()} title="Previous prompt (←)">◀</button>
+          <button onclick={() => analysisStore.next()} title="Next prompt (→)">▶</button>
           <span>
             prompt {position >= 0 ? position + 1 : '·'} / {analysisStore.filteredPositions.length}
             <small>· turn {prompt.turn} · {prompt.context}</small>
           </span>
-          <button onclick={() => analysisStore.next()} title="Next prompt (→)">▶</button>
         </nav>
         <div class="filters" role="group" aria-label="Prompt filter">
           {#each FILTERS as filter (filter.id)}
@@ -130,7 +182,9 @@
           <button onclick={() => void analysisStore.copyPosition()} title="Copy the author-move position header">
             {analysisStore.copiedPosition ? 'position copied' : 'copy position'}
           </button>
-          <a href={watchUrl} title="Open this game in the animated replayer">watch ▸</a>
+          <button class:on={!railCollapsed} onclick={toggleRail} title="Show/hide the turn rail">turns</button>
+          <button class:on={!panelsCollapsed} onclick={togglePanels} title="Show/hide the analysis panels">panels</button>
+          <a href={watchUrl} title="Watch this game with animations in the replayer (the analysis view shows settled snapshots)">animated replay ▸</a>
         </div>
       </header>
 
@@ -141,10 +195,13 @@
               <Hand
                 player={panelPlayer}
                 selectedHand={null}
-                disabled={true}
-                playableIndexes={[]}
+                disabled={panelPlayer.index !== 0}
+                playableIndexes={panelPlayer.index === 0 ? panelPlayer.hand.map((_c, i) => i) : []}
                 concealed={panelPlayer.index !== 0}
-                onSelect={() => {}}
+                onSelect={(playerIndex, handIndex) => {
+                  const card = view?.players[playerIndex]?.hand[handIndex];
+                  if (card) focusedHandCard = card;
+                }}
                 onDrag={() => {}}
                 onDragEnd={() => {}}
               />
@@ -164,12 +221,15 @@
             isBoardPromptSelectable={() => false}
             isBoardPromptSelected={() => false}
             boardPickTally={() => 0}
-            clickSlot={() => {}}
+            clickSlot={(slot) => {
+              if (!slot.empty && slot.pokemon) selectionStore.focusSlot(slot);
+            }}
             allowDrop={() => {}}
             dropToSlot={() => {}}
             canPlaceSetupActive={() => false}
             placeSetupActive={() => {}}
-            showZone={() => {}}
+            showZone={(playerIndex, zone, title, faceDown) =>
+              zoneViewerStore.show(playerIndex, zone, title, faceDown)}
             canPlayOnBoard={false}
             clickBoardPlay={() => {}}
             allowBoardPlayDrop={() => {}}
@@ -181,6 +241,30 @@
             replayMode={true}
             showEvalBar={false}
           />
+
+          <!-- Card close-ups: display-only (canAct=false / inert action) — no engine calls. -->
+          {#if focusedSlot}
+            <ActiveFocus
+              slot={focusedSlot}
+              busy={false}
+              promptActive={false}
+              canAct={false}
+              close={() => selectionStore.clearFocus()}
+              selectOption={() => {}}
+            />
+          {/if}
+          <ZoneViewer
+            open={zoneViewerStore.open}
+            title={zoneViewerStore.title}
+            cards={viewedCards}
+            faceDown={zoneViewerStore.faceDown}
+            actionLabel=""
+            actionDisabled={true}
+            close={() => zoneViewerStore.close()}
+          />
+          {#if focusedHandCard}
+            <CardFocus card={focusedHandCard} close={() => (focusedHandCard = null)} />
+          {/if}
         </BoardLayer>
       </TableShell>
 
@@ -193,6 +277,9 @@
       />
     </div>
 
+    {#if panelsCollapsed}
+      <button class="strip panel-strip" onclick={togglePanels} title="Show the analysis panels">◂ analysis</button>
+    {:else}
     <aside class="panels">
       <AnalysisOptionsPanel
         {prompt}
@@ -211,13 +298,14 @@
       {/if}
       <footer class="hint">← → prompt · shift+← → MAIN · hover an option to highlight its target</footer>
     </aside>
+    {/if}
   </div>
 {/if}
 
 <style>
   .analysis-layout {
-    /* Board width math: TableShell subtracts this from 100vw. */
-    --analysis-dock-w: 640px;
+    /* Board width math: TableShell subtracts --analysis-dock-w from 100vw. The value is set
+       INLINE from the rail/panels collapse state so collapsing widens the playmat. */
     display: flex;
     align-items: stretch;
     min-height: 100vh;
@@ -306,11 +394,16 @@
     gap: 8px;
     margin-left: auto;
     white-space: nowrap;
+    width: 330px;               /* FIXED: the arrows never move as the prompt text changes */
+    flex: none;
   }
 
   .prompt-nav span {
     font-weight: 700;
     font-variant-numeric: tabular-nums;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .prompt-nav small {
@@ -358,6 +451,36 @@
     text-decoration: none;
     font-size: 11px;
     font-weight: 700;
+  }
+
+  .strip {
+    flex: none;
+    width: 26px;
+    height: 100vh;
+    position: sticky;
+    top: 0;
+    padding: 14px 0;
+    border: 0;
+    background: var(--surface-toolbar-bg);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    writing-mode: vertical-rl;
+    cursor: pointer;
+  }
+
+  .strip:hover {
+    color: var(--accent-base);
+  }
+
+  .rail-strip {
+    border-right: 1px solid var(--surface-toolbar-border);
+  }
+
+  .panel-strip {
+    border-left: 1px solid var(--surface-toolbar-border);
   }
 
   .panels {
