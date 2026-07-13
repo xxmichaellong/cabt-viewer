@@ -42,7 +42,7 @@
       font-size: 15px; font-weight: 650;
     }
     h2 .tally { font-size: 12px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
-    .games { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
+    .games { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 8px; }
     a.game {
       display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto;
       column-gap: 10px; align-items: center; text-decoration: none; color: inherit;
@@ -58,18 +58,17 @@
     a.win  .badge { background: var(--win-bg);  color: var(--win-fg);  border: 1px solid var(--win-bd); }
     a.loss .badge { background: var(--loss-bg); color: var(--loss-fg); border: 1px solid var(--loss-bd); }
     a.unknown .badge { background: var(--unk-bg); color: var(--unk-fg); border: 1px solid var(--unk-bd); }
-    a.game .seed { font-weight: 650; font-size: 14px; }
-    a.game .meta { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
-    a.game .row2 { display: flex; align-items: baseline; gap: 8px; }
+    a.game .seed { font-weight: 650; font-size: 14px; white-space: nowrap; }
+    a.game .meta {
+      color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+    }
+    a.game .row2 { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
     a.game .watch {
-      margin-left: auto; color: var(--accent); font-size: 11px; font-weight: 700;
-      padding: 1px 6px; border: 1px solid var(--border); border-radius: 5px;
+      margin-left: auto; flex-shrink: 0; color: var(--accent); font-size: 11px; font-weight: 700;
+      padding: 1px 6px; border: 1px solid var(--border); border-radius: 5px; white-space: nowrap;
     }
     a.game .watch:hover { border-color: var(--accent); }
-    a.game .chip {
-      color: var(--muted); font-size: 10px; border: 1px solid var(--border);
-      border-radius: 8px; padding: 0 6px;
-    }
     .empty, .error { color: var(--muted); margin-top: 24px; }
     .error { color: var(--loss-fg); }
   </style>
@@ -128,15 +127,21 @@
           a.className = 'game ' + cls;
           // Primary click = the analysis page; the small "watch" pill = the animated replayer.
           a.href = '/?view=analyze&replayUrl=' + replayUrl;
-          const chips = [];
-          if (g.driver) chips.push('<span class="chip">' + g.driver + ' drove</span>');
-          if (g.prompts != null) chips.push('<span class="chip">' + g.prompts + ' prompts</span>');
-          if (g.mainDecisions != null) chips.push('<span class="chip">' + g.mainDecisions + ' MAIN</span>');
+          // One compact meta line (the chip boxes overflowed the card): prompts/MAIN for
+          // schema-2 captures, plain decisions for older files. Driver lives in the
+          // analyze header — not worth card space (and it forced an ellipsis).
+          const bits = [(g.turns ?? '?') + ' turns'];
+          if (g.prompts != null) {
+            bits.push(g.prompts + ' prompts');
+            if (g.mainDecisions != null) bits.push(g.mainDecisions + ' MAIN');
+          } else {
+            bits.push((g.decisions ?? '?') + ' decisions');
+          }
           a.innerHTML =
             '<span class="badge">' + outcome + '</span>' +
-            '<span class="row2"><span class="seed">seed ' + g.seed + '</span>' + chips.join('') +
+            '<span class="row2"><span class="seed">seed ' + g.seed + '</span>' +
             '<span class="watch" data-watch>watch ▸</span></span>' +
-            '<span class="meta">' + (g.turns ?? '?') + ' turns · ' + (g.decisions ?? '?') + ' decisions</span>';
+            '<span class="meta">' + bits.join(' · ') + '</span>';
           a.querySelector('[data-watch]').addEventListener('click', (event) => {
             event.preventDefault();
             event.stopPropagation();

@@ -87,6 +87,12 @@
     gap: 4px;
   }
 
+  /* Keep intrinsic (nowrap) content from blowing the panel's grid tracks. */
+  .derived > :global(*),
+  .block > :global(*) {
+    min-width: 0;
+  }
+
   .block-head {
     display: flex;
     align-items: baseline;

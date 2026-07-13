@@ -108,6 +108,7 @@
     height: 100%;
     padding: 10px 8px;
     overflow-y: auto;
+    overflow-x: hidden;
     border-right: 1px solid var(--surface-toolbar-border);
     background: var(--surface-toolbar-bg);
   }
@@ -115,6 +116,11 @@
   .turn {
     display: grid;
     gap: 2px;
+  }
+
+  /* Keep intrinsic (nowrap) node labels from blowing the rail's grid tracks. */
+  .turn > :global(*) {
+    min-width: 0;
   }
 
   .turn-label {

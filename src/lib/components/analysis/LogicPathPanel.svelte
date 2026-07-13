@@ -101,6 +101,11 @@
     gap: 6px;
   }
 
+  /* Keep intrinsic (nowrap) content from blowing the panel's grid tracks. */
+  .logic > :global(*) {
+    min-width: 0;
+  }
+
   header {
     display: flex;
     align-items: baseline;
