@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Option-ranker games</title>
+  <style>
+    :root {
+      --bg: #0f1216; --panel: #171b21; --panel-hover: #1e242c; --border: #262d36;
+      --text: #e6e9ee; --muted: #8b96a5; --accent: #5b9dff;
+      --win-bg: #14311f; --win-fg: #58d18b; --win-bd: #23663f;
+      --loss-bg: #351a1c; --loss-fg: #f0868c; --loss-bd: #6d2f33;
+      --unk-bg: #262d36; --unk-fg: #8b96a5; --unk-bd: #333c47;
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #f5f7fa; --panel: #ffffff; --panel-hover: #f0f3f8; --border: #dde3ec;
+        --text: #1a2029; --muted: #5c6775; --accent: #2f6fdd;
+        --win-bg: #e4f6ec; --win-fg: #1f8a4c; --win-bd: #bce6cd;
+        --loss-bg: #fdeaec; --loss-fg: #c23b46; --loss-bd: #f2c4c9;
+        --unk-bg: #eef1f5; --unk-fg: #5c6775; --unk-bd: #dde3ec;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--bg); color: var(--text);
+      font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      padding: 32px 20px 60px;
+    }
+    .wrap { max-width: 860px; margin: 0 auto; }
+    header h1 { margin: 0 0 4px; font-size: 22px; font-weight: 700; letter-spacing: -0.01em; }
+    header p { margin: 0 0 4px; color: var(--muted); }
+    header .hint { font-size: 12px; }
+    header .hint code {
+      background: var(--panel); border: 1px solid var(--border); border-radius: 4px;
+      padding: 1px 5px; font-size: 11px;
+    }
+    section { margin-top: 26px; }
+    h2 {
+      display: flex; align-items: baseline; justify-content: space-between;
+      margin: 0 0 10px; padding-bottom: 7px; border-bottom: 1px solid var(--border);
+      font-size: 15px; font-weight: 650;
+    }
+    h2 .tally { font-size: 12px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
+    .games { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
+    a.game {
+      display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto;
+      column-gap: 10px; align-items: center; text-decoration: none; color: inherit;
+      background: var(--panel); border: 1px solid var(--border); border-radius: 9px;
+      padding: 11px 13px; transition: background .12s, border-color .12s, transform .12s;
+    }
+    a.game:hover { background: var(--panel-hover); border-color: var(--accent); transform: translateY(-1px); }
+    a.game .badge {
+      grid-row: 1 / 3; align-self: center; justify-self: center;
+      min-width: 46px; text-align: center; padding: 5px 0; border-radius: 6px;
+      font-size: 11px; font-weight: 800; letter-spacing: 0.04em;
+    }
+    a.win  .badge { background: var(--win-bg);  color: var(--win-fg);  border: 1px solid var(--win-bd); }
+    a.loss .badge { background: var(--loss-bg); color: var(--loss-fg); border: 1px solid var(--loss-bd); }
+    a.unknown .badge { background: var(--unk-bg); color: var(--unk-fg); border: 1px solid var(--unk-bd); }
+    a.game .seed { font-weight: 650; font-size: 14px; }
+    a.game .meta { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+    .empty, .error { color: var(--muted); margin-top: 24px; }
+    .error { color: var(--loss-fg); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Option-ranker games</h1>
+      <p>Your Dragapult / Dusknoir deck vs each ladder bot. Click a game to open it in the replayer.</p>
+      <p class="hint">Regenerate after new captures: <code>python3 -m rulebased.build_viewer_index</code> then refresh.</p>
+    </header>
+    <main id="app"><p class="empty">Loading…</p></main>
+  </div>
+
+  <script>
+    fetch('/game-logs/optionranker_manifest.json', { cache: 'no-store' })
+      .then((r) => { if (!r.ok) throw new Error('manifest not found (run build_viewer_index)'); return r.json(); })
+      .then(render)
+      .catch((err) => {
+        document.getElementById('app').innerHTML =
+          '<p class="error">Could not load the game index: ' + err.message + '</p>';
+      });
+
+    function prettyOpp(o) {
+      return o.replace(/_masami$/, ' · masami').replace(/_/g, ' ');
+    }
+
+    function render(data) {
+      const games = (data && data.games) || [];
+      const app = document.getElementById('app');
+      app.innerHTML = '';
+      if (!games.length) {
+        app.innerHTML = '<p class="empty">No games found. Capture some with <code>VIEWER=1</code>.</p>';
+        return;
+      }
+      const groups = {};
+      for (const g of games) (groups[g.opponent] = groups[g.opponent] || []).push(g);
+
+      for (const opp of Object.keys(groups).sort()) {
+        const gs = groups[opp].sort((a, b) => (a.seed ?? 0) - (b.seed ?? 0));
+        const wins = gs.filter((g) => g.won === true).length;
+
+        const section = document.createElement('section');
+        const h2 = document.createElement('h2');
+        h2.innerHTML =
+          '<span>' + prettyOpp(opp) + '</span><span class="tally">' + wins + ' / ' + gs.length + ' won</span>';
+        section.appendChild(h2);
+
+        const list = document.createElement('div');
+        list.className = 'games';
+        for (const g of gs) {
+          const cls = g.won === true ? 'win' : g.won === false ? 'loss' : 'unknown';
+          const outcome = g.won === true ? 'WIN' : g.won === false ? (g.draw ? 'DRAW' : 'LOSS') : '—';
+          const a = document.createElement('a');
+          a.className = 'game ' + cls;
+          a.href = '/?view=replay&replayUrl=' + location.origin + '/game-logs/' + g.file;
+          a.innerHTML =
+            '<span class="badge">' + outcome + '</span>' +
+            '<span class="seed">seed ' + g.seed + '</span>' +
+            '<span class="meta">' + (g.turns ?? '?') + ' turns · ' + (g.decisions ?? '?') + ' decisions</span>';
+          list.appendChild(a);
+        }
+        section.appendChild(list);
+        app.appendChild(section);
+      }
+    }
+  </script>
+</body>
+</html>
