@@ -60,7 +60,12 @@
   type HomeMode = 'play' | 'logs';
 
   let showPromptGallery = initialSearchParam('view') === 'prompt-gallery';
-  // Analysis site (local-only): ?view=analyze mounts the prompt-by-prompt analysis page.
+  // Analysis site (local-only): ?view=analyze mounts the prompt-by-prompt analysis page,
+  // and the BARE root (no query at all) goes to the game index — the analysis site is this
+  // checkout's front door. The live table stays reachable at /?view=play (games.html links it).
+  if (typeof window !== 'undefined' && window.location.pathname === '/' && !window.location.search) {
+    window.location.replace('/games.html');
+  }
   const analyzeMode = initialSearchParam('view') === 'analyze';
   const analyzeReplayUrl = initialSearchParam('replayUrl');
   const initialReplayMode = initialSearchParam('view') === 'replay';
