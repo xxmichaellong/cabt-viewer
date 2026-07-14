@@ -403,15 +403,29 @@
   }
 
   .board-viewport :global(.table-shell) {
-    /* Pin the shell to a FIXED design box (its internals derive from 100vh/--board-h
-       otherwise) so the scaler has a stable natural size to fit to the column. */
-    --board-design-h: 860px;
+    /* Pin the shell to a FIXED design box AND its whole card-size cascade (board + hand card
+       widths are otherwise viewport-clamped — pinning the box but not the cards made the board
+       sparse at large windows). The frozen geometry matches a well-proportioned ~1440x950
+       native window; the scaler then fits it to the column uniformly at ANY window size. */
+    --board-design-h: 880px;
     --board-h: calc(var(--board-design-h) - var(--board-top-inset) - var(--board-bottom-inset));
+    --board-card-w: 80px;
+    --hand-card-w: 112px;
     width: var(--min-table-width);
     min-width: 0;
     height: var(--board-design-h);
     min-height: var(--board-design-h);
     overflow: hidden;
+  }
+
+  /* Children that anchor to 100vh directly must follow the design box instead, or the bottom
+     half of the board clips at tall windows. */
+  .board-viewport :global(.table-shell .board) {
+    height: var(--board-design-h);
+  }
+
+  .board-viewport :global(.table-shell .player-panel.bottom) {
+    top: calc(var(--board-design-h) - var(--board-bottom-inset) + var(--hand-board-gap) - var(--hand-hover-clearance));
   }
 
   .analysis-head {
