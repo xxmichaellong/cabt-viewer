@@ -12,10 +12,18 @@ const hasFixture = existsSync(fixture);
 describe.skipIf(!hasFixture)('analysis prompt index', () => {
   const input = hasFixture ? JSON.parse(readFileSync(fixture, 'utf8')) : null;
 
-  it('yields one prompt per select frame, our prompts carrying the ranker slate', () => {
+  it('yields one prompt per ANSWERABLE select frame, our prompts carrying the ranker slate', () => {
     const frames = input.visualize as Array<Record<string, unknown>>;
     const prompts = buildPromptIndex(frames);
-    expect(prompts.length).toBe(frames.filter((frame) => frame.select).length);
+    // Answerable = has options and the game is not over. The engine's terminal frame still
+    // carries a zero-option select — it must NOT become a navigable prompt.
+    const answerable = frames.filter((frame) => {
+      const select = frame.select as { option?: unknown[] } | undefined;
+      const result = Number((frame.current as { result?: number } | undefined)?.result ?? -1);
+      return select && Array.isArray(select.option) && select.option.length > 0 && result < 0;
+    });
+    expect(prompts.length).toBe(answerable.length);
+    expect(prompts.length).toBeLessThan(frames.filter((frame) => frame.select).length);
 
     const ours = prompts.filter((prompt) => prompt.ranker !== null);
     expect(ours.length).toBe(frames.filter((frame) => '_ranker' in frame).length);
@@ -25,6 +33,12 @@ describe.skipIf(!hasFixture)('analysis prompt index', () => {
       expect(prompt.ranker!.length).toBeGreaterThan(0);
       expect(prompt.ranker![0].rank).toBe(1);
     }
+  });
+
+  it('resolves the full replay json (wrapped shape) identically to the bare frame array', () => {
+    const fromJson = buildPromptIndex(input);
+    const fromFrames = buildPromptIndex(input.visualize);
+    expect(fromJson.length).toBe(fromFrames.length);
   });
 
   it('carries real scores + tiers on MAIN prompts (schema 2)', () => {

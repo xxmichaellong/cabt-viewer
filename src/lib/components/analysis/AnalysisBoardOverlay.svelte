@@ -87,20 +87,26 @@
     return serials;
   });
 
-  // Plan overlay: ko_set rows carry names, not serials — resolve via the threat table.
+  // Plan overlay: newer captures carry the EXACT target serial on each ko_set row; older
+  // files only have names, so fall back to first-unused-name against the threat table
+  // (ambiguous with duplicate-named Pokemon — the serial path exists precisely for that).
   let koBySerial = $derived.by((): Map<number, { turn: number; prize: number; name: string }> => {
     const map = new Map<number, { turn: number; prize: number; name: string }>();
-    if (!prompt?.plan?.ko_set || !prompt.derived) {
+    if (!prompt?.plan?.ko_set) {
       return map;
     }
     const used = new Set<number>();
     for (const ko of prompt.plan.ko_set) {
-      const threat = prompt.derived.threats.find(
-        (candidate) => candidate.name === ko.name && candidate.serial !== null && !used.has(candidate.serial),
-      );
-      if (threat?.serial != null) {
-        used.add(threat.serial);
-        map.set(threat.serial, { turn: ko.turn ?? 0, prize: ko.prize ?? 1, name: ko.name ?? '' });
+      let serial: number | null = Number.isFinite(Number(ko.serial)) ? Number(ko.serial) : null;
+      if (serial === null && prompt.derived) {
+        const threat = prompt.derived.threats.find(
+          (candidate) => candidate.name === ko.name && candidate.serial !== null && !used.has(candidate.serial),
+        );
+        serial = threat?.serial ?? null;
+      }
+      if (serial !== null) {
+        used.add(serial);
+        map.set(serial, { turn: ko.turn ?? 0, prize: ko.prize ?? 1, name: ko.name ?? '' });
       }
     }
     return map;

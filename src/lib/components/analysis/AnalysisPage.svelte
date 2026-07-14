@@ -36,9 +36,12 @@
   // Collapsible side columns (persisted). TableShell reads --analysis-dock-w to size the board,
   // so collapsing genuinely reclaims the width for the playmat.
   function persisted(key: string, initial: boolean): boolean {
-    if (typeof window === 'undefined') return initial;
-    const raw = window.localStorage.getItem(key);
-    return raw === null ? initial : raw === '1';
+    try {
+      const raw = window.localStorage.getItem(key);
+      return raw === null ? initial : raw === '1';
+    } catch {
+      return initial;    // SSR, or storage blocked (getItem itself throws SecurityError)
+    }
   }
   let railCollapsed = $state(persisted('analysis.railCollapsed', false));
   let panelsCollapsed = $state(persisted('analysis.panelsCollapsed', false));
@@ -149,7 +152,9 @@
         <strong>
           {meta.opponent ?? 'game'}
           {#if meta.seed !== undefined}<small>· seed {meta.seed}</small>{/if}
-          {#if meta.won !== undefined}
+          {#if meta.draw}
+            <span class="outcome draw">DRAW</span>
+          {:else if meta.won !== undefined}
             <span class="outcome" class:won={meta.won}>{meta.won ? 'WIN' : 'LOSS'}</span>
           {/if}
           {#if meta.driver}<small>· {meta.driver} drove</small>{/if}
@@ -179,8 +184,16 @@
             onclick={() => (analysisStore.planOverlay = !analysisStore.planOverlay)}
             title="Paint the plan's KO turns + threat heat on the board"
           >plan overlay</button>
-          <button onclick={() => void analysisStore.copyPosition()} title="Copy the author-move position header">
-            {analysisStore.copiedPosition ? 'position copied' : 'copy position'}
+          <button
+            onclick={() => void analysisStore.copyPosition()}
+            disabled={prompt.ranker === null}
+            title={prompt.ranker === null
+              ? 'Only our decisions have a position to author (this prompt carries no ranking)'
+              : 'Copy the author-move position header'}
+          >
+            {analysisStore.copyStatus === 'copied' ? 'position copied'
+              : analysisStore.copyStatus === 'failed' ? 'copy FAILED — retry'
+              : 'copy position'}
           </button>
           <button class:on={!railCollapsed} onclick={toggleRail} title="Show/hide the turn rail">turns</button>
           <button class:on={!panelsCollapsed} onclick={togglePanels} title="Show/hide the analysis panels">panels</button>
@@ -300,6 +313,13 @@
     </aside>
     {/if}
   </div>
+{:else}
+  <!-- No replayUrl (or nothing loaded): never a silent blank page. -->
+  <section class="analysis-message">
+    <strong>No game specified</strong>
+    <span>Open a game from the index (the URL needs a <code>replayUrl</code> parameter).</span>
+    <a href="/games.html">← back to the game index</a>
+  </section>
 {/if}
 
 <style>
@@ -386,6 +406,11 @@
   .outcome.won {
     border-color: #2f8a55;
     color: #58d18b;
+  }
+
+  .outcome.draw {
+    border-color: var(--surface-inset-border);
+    color: var(--text-secondary);
   }
 
   .prompt-nav {

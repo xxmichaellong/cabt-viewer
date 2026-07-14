@@ -141,12 +141,26 @@
           a.innerHTML =
             '<span class="badge">' + outcome + '</span>' +
             '<span class="row2"><span class="seed">seed ' + g.seed + '</span>' +
-            '<span class="watch" data-watch>watch ▸</span></span>' +
+            '<span class="watch" data-watch role="link" tabindex="0">watch ▸</span></span>' +
             '<span class="meta">' + bits.join(' · ') + '</span>';
-          a.querySelector('[data-watch]').addEventListener('click', (event) => {
+          // The pill sits INSIDE the analyze <a> (nested anchors are invalid HTML), so it
+          // reimplements link behavior: plain click navigates, cmd/ctrl/shift/middle-click
+          // opens the replayer in a new tab (not the parent's analyze href), Enter activates.
+          const watchHref = '/?view=replay&replayUrl=' + replayUrl;
+          const goWatch = (event, newTab) => {
             event.preventDefault();
             event.stopPropagation();
-            location.href = '/?view=replay&replayUrl=' + replayUrl;
+            if (newTab) window.open(watchHref, '_blank');
+            else location.href = watchHref;
+          };
+          const watchEl = a.querySelector('[data-watch]');
+          watchEl.addEventListener('click', (event) =>
+            goWatch(event, event.metaKey || event.ctrlKey || event.shiftKey));
+          watchEl.addEventListener('auxclick', (event) => {
+            if (event.button === 1) goWatch(event, true);
+          });
+          watchEl.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' || event.key === ' ') goWatch(event, false);
           });
           list.appendChild(a);
         }

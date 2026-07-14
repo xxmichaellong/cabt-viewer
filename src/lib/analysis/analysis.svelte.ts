@@ -31,7 +31,7 @@ class AnalysisStore {
   /** optionIndex of the row whose logic path is expanded; null = the played option. */
   selectedCandidate = $state<number | null>(null);
   planOverlay = $state(false);
-  copiedPosition = $state(false);
+  copyStatus = $state<'' | 'copied' | 'failed'>('');
   private views: GameView[] = [];
 
   get currentPrompt(): PromptView | null {
@@ -103,7 +103,7 @@ class AnalysisStore {
       const snapshot = cabtReplayToSnapshot(json);
       this.views = snapshot.views;
       this.meta = gameMetaFrom(json);
-      this.prompts = buildPromptIndex((json as { visualize?: unknown }).visualize);
+      this.prompts = buildPromptIndex(json);   // resolves runner/bare/Kaggle-env shapes itself
       if (!this.prompts.length) {
         throw new Error('No prompts found in this replay.');
       }
@@ -129,7 +129,7 @@ class AnalysisStore {
     this.promptIdx = Math.min(this.prompts.length - 1, Math.max(0, Math.round(position)));
     this.hoveredCandidate = null;
     this.selectedCandidate = null;
-    this.copiedPosition = false;
+    this.copyStatus = '';
     if (syncUrl) {
       this.syncUrl();
     }
@@ -204,25 +204,31 @@ class AnalysisStore {
     this.filter = filter;
   }
 
-  /** Copy the author-move position header + the ranked slate for the current prompt. */
+  /** Copy the author-move position header + the ranked slate for the current prompt.
+      Only valid on OUR decisions (prompt.ranker set): the decision N/total numbering indexes
+      the dashboard replay's decisions — copying from an opponent frame would mint a golden
+      for a position the analyst never viewed. The UI disables the button in that case. */
   async copyPosition(): Promise<void> {
     const prompt = this.currentPrompt;
-    if (!prompt || typeof navigator === 'undefined' || !navigator.clipboard) {
+    if (!prompt || prompt.ranker === null || typeof navigator === 'undefined' || !navigator.clipboard) {
       return;
     }
-    const { ordinal, total } = this.ourOrdinal;
+    const { ordinal, total } = this.ourOrdinal;    // current prompt HAS ranker → counts itself; >= 1
     const file = this.meta.dashboardFile ?? 'optionranker_replay_?.json';
     const lines = [
-      `# Position — ${file} · decision ${Math.max(1, ordinal)}/${total} · turn ${prompt.turn} · ${prompt.context}`,
+      `# Position — ${file} · decision ${ordinal}/${total} · turn ${prompt.turn} · ${prompt.context}`,
     ];
-    const rows = prompt.ranker ?? [];
-    for (const row of rows.slice(0, 5)) {
+    for (const row of prompt.ranker.slice(0, 5)) {
       const mark = row.chosen ? '*' : ' ';
       const score = row.score !== null ? `[score=${row.score}]` : '';
       lines.push(`${mark} ${row.rank}. ${row.label} ${score} | ${row.reason}`);
     }
-    await navigator.clipboard.writeText(lines.join('\n'));
-    this.copiedPosition = true;
+    try {
+      await navigator.clipboard.writeText(lines.join('\n'));
+      this.copyStatus = 'copied';
+    } catch {
+      this.copyStatus = 'failed';    // e.g. document unfocused / permission denied — never
+    }                                // let stale clipboard contents masquerade as this position
   }
 
   private syncUrl(): void {

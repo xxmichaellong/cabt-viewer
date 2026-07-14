@@ -679,6 +679,7 @@ function buildPlanView(raw: CabtVisualizeFrame['_plan']): PlanView | undefined {
     neededPieces: Array.isArray(raw.needed_pieces) ? raw.needed_pieces.map(String) : [],
     attackKosActive: raw.attack_kos_active === true,
     givePrizes: raw.give_prizes === true,
+    advisory: (raw as { advisory?: unknown }).advisory === true,
   };
 }
 

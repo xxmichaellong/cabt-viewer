@@ -19,6 +19,9 @@
   <section class="plan" aria-label="Prize-map plan">
     <div class="plan-head">
       <strong>Prize-map plan</strong>
+      {#if plan.advisory}
+        <span class="plan-advisory" title="Display-only plan (PLANNER_VIEW capture) — it did not steer the played line">advisory</span>
+      {/if}
       {#if plan.render}<span class="plan-render">{plan.render}</span>{/if}
     </div>
     {#if plan.crucial.length}
@@ -115,6 +118,16 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: 11px;
+  }
+
+  .plan-advisory {
+    flex: none;
+    padding: 0 7px;
+    border: 1px dashed var(--surface-inset-border);
+    border-radius: 9px;
+    color: var(--text-secondary);
+    font-size: 9px;
+    font-weight: 700;
   }
 
   .plan-sub {
