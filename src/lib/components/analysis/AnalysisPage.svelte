@@ -158,6 +158,7 @@
             <span class="outcome" class:won={meta.won}>{meta.won ? 'WIN' : 'LOSS'}</span>
           {/if}
           {#if meta.driver}<small>· {meta.driver} drove</small>{/if}
+          {#if meta.iteration}<small>· {meta.iteration}{meta.seeded ? ' (seeded)' : ''}</small>{/if}
         </strong>
         <nav class="prompt-nav">
           <!-- Arrows sit together at the nav's fixed left edge (the nav has a FIXED width and the

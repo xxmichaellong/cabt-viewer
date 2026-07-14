@@ -121,6 +121,8 @@ export type GameMeta = {
   driver?: string;
   planner?: boolean;
   plannerView?: boolean;
+  seeded?: boolean;
+  iteration?: string;
   won?: boolean;
   draw?: boolean;
   turns?: number;

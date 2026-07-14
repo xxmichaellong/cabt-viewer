@@ -71,6 +71,17 @@
     a.game .watch:hover { border-color: var(--accent); }
     .empty, .error { color: var(--muted); margin-top: 24px; }
     .error { color: var(--loss-fg); }
+    .iterbar .iterrow { display: flex; align-items: flex-start; gap: 22px; flex-wrap: wrap; }
+    .iterbar label { font-size: 12px; color: var(--muted); }
+    .iterbar select {
+      margin-left: 4px; padding: 3px 6px; border: 1px solid var(--border); border-radius: 6px;
+      background: var(--panel); color: var(--text); font: inherit; font-size: 12px;
+    }
+    table.iters { border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+    table.iters th, table.iters td {
+      padding: 2px 14px 2px 0; text-align: left; border-bottom: 1px solid var(--border);
+    }
+    table.iters th { color: var(--muted); font-weight: 600; font-size: 11px; }
   </style>
 </head>
 <body>
@@ -97,12 +108,56 @@
       return o.replace(/_masami$/, ' · masami').replace(/_/g, ' ');
     }
 
+    function record(gs) {
+      const w = gs.filter((g) => g.won === true && !g.draw).length;
+      const d = gs.filter((g) => g.draw === true).length;
+      return { w, d, l: gs.length - w - d, n: gs.length };
+    }
+
     function render(data) {
       const games = (data && data.games) || [];
+      const iterations = (data && data.iterations) || [];
       const app = document.getElementById('app');
       app.innerHTML = '';
-      if (!games.length) {
+      if (!games.length && !iterations.length) {
         app.innerHTML = '<p class="empty">No games found. Capture some with <code>VIEWER=1</code>.</p>';
+        return;
+      }
+      // Iteration bar: the flat files are the LATEST run; iterations/<tag>/ are archived runs
+      // over the SAME seeds (capture with ITER=<tag> SEEDED=1) — pick one to browse it, and
+      // read the table to see whether a deck/pilot change moved the paired win rate.
+      if (iterations.length) {
+        const bar = document.createElement('section');
+        bar.className = 'iterbar';
+        const rows = [...iterations].reverse().map((it) => {
+          const r = record(it.games);
+          return '<tr><td>' + it.id + '</td><td>' + r.w + '-' + r.l + (r.d ? '-' + r.d : '') +
+            '</td><td>' + (r.n ? Math.round((100 * r.w) / r.n) : 0) + '%</td></tr>';
+        }).join('');
+        bar.innerHTML =
+          '<h2><span>Iterations</span><span class="tally">same seeds · evolving deck</span></h2>' +
+          '<div class="iterrow"><label>show <select id="iterpick"><option value="">latest</option>' +
+          [...iterations].reverse().map((it) => '<option value="' + it.id + '">' + it.id + '</option>').join('') +
+          '</select></label>' +
+          '<table class="iters"><thead><tr><th>run</th><th>record</th><th>win rate</th></tr></thead>' +
+          '<tbody>' + rows + '</tbody></table></div>';
+        app.appendChild(bar);
+        bar.querySelector('#iterpick').addEventListener('change', (event) => {
+          const it = iterations.find((x) => x.id === event.target.value);
+          renderGames(it ? it.games : games);
+        });
+      }
+      const grid = document.createElement('div');
+      grid.id = 'grid';
+      app.appendChild(grid);
+      renderGames(games);
+    }
+
+    function renderGames(games) {
+      const app = document.getElementById('grid');
+      app.innerHTML = '';
+      if (!games.length) {
+        app.innerHTML = '<p class="empty">No games in this run.</p>';
         return;
       }
       const groups = {};
