@@ -62,8 +62,15 @@
   let showPromptGallery = initialSearchParam('view') === 'prompt-gallery';
   // Analysis site (local-only): ?view=analyze mounts the prompt-by-prompt analysis page,
   // and the BARE root (no query at all) goes to the game index — the analysis site is this
-  // checkout's front door. The live table stays reachable at /?view=play (games.html links it).
-  if (typeof window !== 'undefined' && window.location.pathname === '/' && !window.location.search) {
+  // checkout's front door. Same-origin referrers are exempt: in-app links to '/' (e.g. the
+  // prompt gallery's "Back to game") still mean the live table, which also stays reachable
+  // at /?view=play (games.html links it).
+  if (
+    typeof window !== 'undefined'
+    && window.location.pathname === '/'
+    && !window.location.search
+    && !document.referrer.startsWith(window.location.origin)
+  ) {
     window.location.replace('/games.html');
   }
   const analyzeMode = initialSearchParam('view') === 'analyze';

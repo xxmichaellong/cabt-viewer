@@ -32,6 +32,10 @@ export type RankerRow = {
   tier: string | null;
   within: number | null;
   rule: string | null;
+  /** 1-based tier position + list length, emitted by the capture so the viewer never
+      hardcodes the _MAIN_TIERS size. Null on captures predating tier_ord. */
+  tierOrd: number | null;
+  tierTotal: number | null;
   oracle: OracleResult | null;
   targetSerial: number | null;
   factors: TraceFactor[];
@@ -81,7 +85,7 @@ export type PlanInfo = {
   render?: string;
   turns?: number | null;
   crucial?: Array<{ piece?: string; criticality?: number; secured?: boolean }>;
-  ko_set?: Array<{ name?: string; prize?: number; turn?: number }>;
+  ko_set?: Array<{ serial?: number; name?: string; prize?: number; turn?: number }>;
   needed_pieces?: string[];
   attack_kos_active?: boolean;
   give_prizes?: boolean;
@@ -118,6 +122,7 @@ export type GameMeta = {
   planner?: boolean;
   plannerView?: boolean;
   won?: boolean;
+  draw?: boolean;
   turns?: number;
   prompts?: number;
   mainDecisions?: number;
@@ -126,7 +131,7 @@ export type GameMeta = {
 
 type RawFrame = Record<string, unknown> & {
   select?: Record<string, unknown> | null;
-  current?: { turn?: number; yourIndex?: number; players?: unknown[] };
+  current?: { turn?: number; yourIndex?: number; result?: number; players?: unknown[] };
 };
 
 export function gameMetaFrom(json: unknown): GameMeta {
@@ -134,11 +139,34 @@ export function gameMetaFrom(json: unknown): GameMeta {
   return meta && typeof meta === 'object' ? (meta as GameMeta) : {};
 }
 
-export function buildPromptIndex(rawFrames: unknown): PromptView[] {
-  if (!Array.isArray(rawFrames)) {
-    return [];
+/** Resolve the frame list from any replay shape the app plays back — mirrors cabtReplay's
+    internal extractVisualizeFrames (not exported upstream): a wrapped runner file
+    ({visualize: [...]}), a bare frame array, or a Kaggle environment dump. */
+export function resolveFrames(input: unknown): RawFrame[] {
+  if (Array.isArray(input)) {
+    return input as RawFrame[];
   }
-  const frames = rawFrames as RawFrame[];
+  const wrapped = (input as { visualize?: unknown })?.visualize;
+  if (Array.isArray(wrapped)) {
+    return wrapped as RawFrame[];
+  }
+  const env = (input as { environment?: { steps?: unknown[][] } })?.environment
+    ?? (input as { steps?: unknown[][] });
+  const step0 = env?.steps?.[0]?.[0] as
+    | { observation?: { visualize?: unknown }; visualize?: unknown }
+    | undefined;
+  const envFrames = step0?.observation?.visualize ?? step0?.visualize;
+  return Array.isArray(envFrames) ? (envFrames as RawFrame[]) : [];
+}
+
+/** Engine SelectContext names arrive UPPER_SNAKE from `_rankerContext` but PascalCase from the
+    raw frame's select ('ToHand') — normalize so styling/abbreviation checks match both. */
+function normalizeContext(value: unknown): string {
+  return String(value ?? '?').replace(/([a-z0-9])([A-Z])/g, '$1_$2').toUpperCase();
+}
+
+export function buildPromptIndex(input: unknown): PromptView[] {
+  const frames = resolveFrames(input);
   const prompts: PromptView[] = [];
   frames.forEach((frame, frameIndex) => {
     const select = frame.select;
@@ -146,11 +174,16 @@ export function buildPromptIndex(rawFrames: unknown): PromptView[] {
       return;
     }
     const options = Array.isArray(select.option) ? (select.option as Record<string, unknown>[]) : [];
+    // The engine's game-over frame still carries a `select` with ZERO options — it was never
+    // a decision anyone answered, so it must not become a navigable prompt.
+    if (!options.length || Number(frame.current?.result ?? -1) >= 0) {
+      return;
+    }
     const seat = Number(frame.current?.yourIndex ?? 0);
     const ranker = rankerRowsFrom(frame);
     const context = typeof frame._rankerContext === 'string'
       ? frame._rankerContext
-      : String(select.context ?? select.type ?? '?').toUpperCase();
+      : normalizeContext(select.context ?? select.type ?? '?');
     prompts.push({
       frameIndex,
       turn: Number(frame.current?.turn ?? 0),
@@ -189,6 +222,8 @@ function rankerRowsFrom(frame: RawFrame): RankerRow[] | null {
       tier: typeof row.tier === 'string' ? row.tier : null,
       within: finiteOrNull(row.within),
       rule: typeof row.rule === 'string' ? row.rule : null,
+      tierOrd: finiteOrNull(row.tier_ord),
+      tierTotal: finiteOrNull(row.tier_total),
       oracle: oracle && typeof oracle === 'object'
         ? { damage: Number(oracle.damage) || 0, ko: oracle.ko === true }
         : null,

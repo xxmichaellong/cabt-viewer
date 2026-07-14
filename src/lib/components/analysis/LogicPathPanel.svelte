@@ -9,7 +9,8 @@
 
   let { prompt, selectedCandidate }: Props = $props();
 
-  const TIER_COUNT = 18; // _MAIN_TIERS in run/rulebased/option_ranker.py
+  // Fallback for captures predating tier_ord emission (score = tier_rank*1000 + within).
+  const TIER_COUNT_FALLBACK = 18; // _MAIN_TIERS size when the fallback was written
 
   let row = $derived.by((): RankerRow | null => {
     const rows = prompt.ranker;
@@ -22,12 +23,14 @@
     return rows.find((candidate) => candidate.chosen) ?? rows[0] ?? null;
   });
 
-  // Tier position for "k of 18": rank among the ordered tier list is not carried on the
-  // frame, so derive it from the tier component of the score (tier() = rank*1000 + within).
+  // Tier position for "k of N": the capture emits tier_ord/tier_total straight from
+  // _MAIN_TIERS (never drifts); older files derive it from the score's tier component.
+  let tierTotal = $derived(row?.tierTotal ?? TIER_COUNT_FALLBACK);
   let tierRank = $derived(
-    row?.score !== null && row?.score !== undefined && row.tier
-      ? TIER_COUNT + 1 - Math.round((row.score - (row.within ?? 0)) / 1000)
-      : null,
+    row?.tierOrd
+      ?? (row?.score !== null && row?.score !== undefined && row.tier
+        ? TIER_COUNT_FALLBACK + 1 - Math.round((row.score - (row.within ?? 0)) / 1000)
+        : null),
   );
 
   let crumbs = $derived.by((): string[] => {
@@ -39,8 +42,8 @@
       parts.push(row.rule);
     }
     if (row.tier) {
-      parts.push(tierRank !== null && tierRank >= 1 && tierRank <= TIER_COUNT
-        ? `tier ${row.tier} (${tierRank} of ${TIER_COUNT})`
+      parts.push(tierRank !== null && tierRank >= 1 && tierRank <= tierTotal
+        ? `tier ${row.tier} (${tierRank} of ${tierTotal})`
         : `tier ${row.tier}`);
     }
     if (row.within !== null && row.within !== 0) {

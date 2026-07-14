@@ -59,6 +59,7 @@ export type PlanView = {
   neededPieces: string[]; // grab off Ultra Ball / Poffin
   attackKosActive: boolean;
   givePrizes: boolean; // a self-KO is part of the line
+  advisory: boolean; // display-only plan (PLANNER_VIEW capture): it did NOT steer the played line
 };
 
 export type RankerStepView = {
