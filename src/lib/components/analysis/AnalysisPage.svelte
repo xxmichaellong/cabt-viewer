@@ -33,6 +33,41 @@
   let boardHost = $state<HTMLElement | null>(null);
   let hoveredKoName = $state<string | null>(null);
 
+  // Scale-to-fit: TableShell's internal geometry is viewport-coupled (100vh / vw-clamped card
+  // sizes) and maxes out around --min-table-width, so it can't grow into a wide column or
+  // shrink into a narrow one on its own. We pin it to its natural design size and uniformly
+  // transform-scale the whole board to FIT the column: bigger when there's room, fully
+  // visible (never clipped) when there isn't.
+  let headerEl = $state<HTMLElement | null>(null);
+  let viewportEl = $state<HTMLElement | null>(null);
+  let scalerEl = $state<HTMLElement | null>(null);
+  let headerH = $state(90);
+  let boardScale = $state(1);
+
+  $effect(() => {
+    if (!viewportEl || !scalerEl) {
+      return;
+    }
+    const measure = () => {
+      headerH = headerEl?.offsetHeight ?? 0;
+      const vw = viewportEl!.clientWidth;
+      const vh = viewportEl!.clientHeight;
+      const nw = scalerEl!.offsetWidth;
+      const nh = scalerEl!.offsetHeight;
+      if (vw > 4 && vh > 4 && nw > 4 && nh > 4) {
+        boardScale = Math.min(vw / nw, vh / nh, 2);
+      }
+    };
+    const ro = new ResizeObserver(measure);
+    ro.observe(viewportEl);
+    ro.observe(scalerEl);
+    if (headerEl) {
+      ro.observe(headerEl);
+    }
+    measure();
+    return () => ro.disconnect();
+  });
+
   // Collapsible side columns (persisted). TableShell reads --analysis-dock-w to size the board,
   // so collapsing genuinely reclaims the width for the playmat.
   function persisted(key: string, initial: boolean): boolean {
@@ -143,11 +178,12 @@
         groups={analysisStore.turnGroups}
         currentFrameIndex={prompt.frameIndex}
         gotoFrame={(frameIndex) => analysisStore.gotoFrame(frameIndex)}
+        oncollapse={toggleRail}
       />
     {/if}
 
     <div class="board-column" bind:this={boardHost}>
-      <header class="analysis-head">
+      <header class="analysis-head" bind:this={headerEl}>
         <a class="back" href="/games.html" title="Game index">◂ games</a>
         <strong>
           {meta.opponent ?? 'game'}
@@ -202,6 +238,8 @@
         </div>
       </header>
 
+      <div class="board-viewport" bind:this={viewportEl} style={`top: ${headerH}px`}>
+        <div class="board-scaler" bind:this={scalerEl} style={`transform: scale(${boardScale})`}>
       <TableShell debugZones={false} replayMode={false}>
         <BoardLayer>
           {#each view.players as panelPlayer (panelPlayer.index)}
@@ -281,6 +319,8 @@
           {/if}
         </BoardLayer>
       </TableShell>
+        </div>
+      </div>
 
       <AnalysisBoardOverlay
         {prompt}
@@ -346,10 +386,32 @@
     min-width: 0;
   }
 
-  /* The turn rail eats 250px that TableShell's 100vw math doesn't know about. */
-  .board-column :global(.table-shell) {
-    width: 100%;
+  /* The board renders at its natural design size and the scaler fits it to the column. */
+  .board-viewport {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+  }
+
+  .board-scaler {
+    width: max-content;
+    transform-origin: center;
+  }
+
+  .board-viewport :global(.table-shell) {
+    /* Pin the shell to a FIXED design box (its internals derive from 100vh/--board-h
+       otherwise) so the scaler has a stable natural size to fit to the column. */
+    --board-design-h: 860px;
+    --board-h: calc(var(--board-design-h) - var(--board-top-inset) - var(--board-bottom-inset));
+    width: var(--min-table-width);
     min-width: 0;
+    height: var(--board-design-h);
+    min-height: var(--board-design-h);
+    overflow: hidden;
   }
 
   .analysis-head {
