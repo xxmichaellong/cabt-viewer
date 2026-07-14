@@ -6,9 +6,11 @@
     groups: TurnGroup[];
     currentFrameIndex: number;
     gotoFrame: (frameIndex: number) => void;
+    /** Collapse the rail (the discoverable affordance; the header 'turns' toggle also works). */
+    oncollapse?: () => void;
   };
 
-  let { groups, currentFrameIndex, gotoFrame }: Props = $props();
+  let { groups, currentFrameIndex, gotoFrame, oncollapse }: Props = $props();
 
   let rail = $state<HTMLElement | null>(null);
 
@@ -67,6 +69,12 @@
 </script>
 
 <nav class="turnflow" bind:this={rail} aria-label="Turn flow">
+  {#if oncollapse}
+    <div class="rail-head">
+      <span>turns</span>
+      <button type="button" onclick={oncollapse} title="Collapse the turn rail (widens the board)">◂ hide</button>
+    </div>
+  {/if}
   {#each groups as group (group.turn)}
     <div class="turn">
       <div class="turn-label">{group.turn === 0 ? 'setup' : `turn ${group.turn}`}</div>
@@ -111,6 +119,40 @@
     overflow-x: hidden;
     border-right: 1px solid var(--surface-toolbar-border);
     background: var(--surface-toolbar-bg);
+  }
+
+  .rail-head {
+    position: sticky;
+    top: -10px;               /* rides the rail's own padding */
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: -4px -2px 0;
+    padding: 4px 4px 5px;
+    background: var(--surface-toolbar-bg);
+    color: var(--text-secondary);
+    font-size: 9.5px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .rail-head button {
+    padding: 1px 7px;
+    border: 1px solid var(--surface-inset-border);
+    border-radius: 6px;
+    background: var(--surface-inset-bg);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 9px;
+    letter-spacing: 0.05em;
+    cursor: pointer;
+  }
+
+  .rail-head button:hover {
+    border-color: var(--accent-base);
+    color: var(--accent-base);
   }
 
   .turn {
