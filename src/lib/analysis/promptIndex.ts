@@ -68,6 +68,16 @@ export type SelectMeta = {
   effect: { cid: number; name: string } | null;
 };
 
+export type RaceInfo = {
+  ourTurns: number | null;
+  oppTurns: number | null;
+  margin: number | null;
+  verdict: 'winning' | 'losing' | 'unclear' | 'developing';
+  ourAttacker: string | null;
+  oppAttacker: string | null;
+  oppTimeToOnline: number | null;
+};
+
 export type DerivedInfo = {
   deckRemaining: DeckEntry[];
   deckResolved: boolean;
@@ -77,6 +87,7 @@ export type DerivedInfo = {
   threats: ThreatInfo[];
   matchup: string | null;
   nextTurnReach: number | null;
+  race: RaceInfo | null;
   select: SelectMeta | null;
 };
 
@@ -299,6 +310,7 @@ function derivedFrom(frame: RawFrame): DerivedInfo | null {
       : [],
     matchup: typeof raw.matchup === 'string' ? raw.matchup : null,
     nextTurnReach: finiteOrNull(raw.next_turn_reach),
+    race: raceInfo(raw.race),
     select: selectMeta && typeof selectMeta === 'object'
       ? {
           context: typeof selectMeta.context === 'string' ? selectMeta.context : null,
@@ -309,6 +321,21 @@ function derivedFrom(frame: RawFrame): DerivedInfo | null {
           effect: cardRef(selectMeta.effect),
         }
       : null,
+  };
+}
+
+function raceInfo(raw: unknown): RaceInfo | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  const v = r.verdict;
+  return {
+    ourTurns: finiteOrNull(r.our_turns),
+    oppTurns: finiteOrNull(r.opp_turns),
+    margin: finiteOrNull(r.margin),
+    verdict: v === 'winning' || v === 'losing' || v === 'developing' ? v : 'unclear',
+    ourAttacker: typeof r.our_attacker === 'string' ? r.our_attacker : null,
+    oppAttacker: typeof r.opp_attacker === 'string' ? r.opp_attacker : null,
+    oppTimeToOnline: finiteOrNull(r.opp_time_to_online),
   };
 }
 

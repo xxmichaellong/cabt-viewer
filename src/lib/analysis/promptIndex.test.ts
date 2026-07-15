@@ -68,6 +68,18 @@ describe.skipIf(!hasFixture)('analysis prompt index', () => {
     }
   });
 
+  it('parses the turn-race readout when present', () => {
+    const prompts = buildPromptIndex(input.visualize);
+    const race = prompts.find((prompt) => prompt.derived?.race)?.derived?.race;
+    if (race) {
+      expect(['winning', 'losing', 'unclear', 'developing']).toContain(race.verdict);
+      for (const v of [race.ourTurns, race.oppTurns, race.margin, race.oppTimeToOnline]) {
+        expect(v === null || typeof v === 'number').toBe(true);
+      }
+      expect(race.ourAttacker === null || typeof race.ourAttacker === 'string').toBe(true);
+    }
+  });
+
   it('reads the top-level meta block', () => {
     const meta = gameMetaFrom(input);
     expect(meta.schema).toBeGreaterThanOrEqual(2);
