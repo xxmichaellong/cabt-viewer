@@ -13,6 +13,25 @@
 </script>
 
 <section class="derived" aria-label="Derived information">
+  {#if derived.race}
+    <div class="block">
+      <div class="block-head">
+        <strong>Turn race</strong>
+        <span class="badge race-{derived.race.verdict}">{derived.race.verdict}</span>
+      </div>
+      <div class="race-row">
+        <span>us <b>{derived.race.ourTurns ?? '—'}</b></span>
+        <span>opp <b>{derived.race.oppTurns ?? '—'}</b></span>
+        {#if derived.race.margin !== null}
+          <span>M <b>{derived.race.margin > 0 ? '+' : ''}{derived.race.margin}</b></span>
+        {/if}
+      </div>
+      <div class="reach">
+        {derived.race.ourAttacker ?? '—'} vs {derived.race.oppAttacker ?? '—'}{#if derived.race.oppTimeToOnline} · opp online in {derived.race.oppTimeToOnline}{/if}
+      </div>
+    </div>
+  {/if}
+
   <div class="block">
     <div class="block-head">
       <strong>Our deck · {derived.deckRemaining.reduce((sum, entry) => sum + entry.count, 0)} cards</strong>
@@ -168,6 +187,28 @@
   .reach {
     color: var(--text-secondary);
     font-size: 10px;
+  }
+
+  .race-row {
+    display: flex;
+    gap: 12px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .race-row b {
+    color: var(--text-primary);
+  }
+
+  .badge.race-winning {
+    border-color: #3fb950;
+    color: #3fb950;
+  }
+
+  .badge.race-losing {
+    border-color: #f85149;
+    color: #f85149;
   }
 
   .reach b {
