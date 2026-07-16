@@ -225,7 +225,15 @@
       const groups = {};
       for (const g of games) (groups[g.opponent] = groups[g.opponent] || []).push(g);
 
-      for (const opp of Object.keys(groups).sort()) {
+      // Sort matchups by win rate ASCENDING (worst matchups first) so the problem decks surface at the
+      // top; ties broken alphabetically for stable ordering.
+      const oppWinRate = (opp) => {
+        const g = groups[opp];
+        return g.length ? g.filter((x) => x.won === true).length / g.length : 1;
+      };
+      const oppOrder = Object.keys(groups).sort(
+        (a, b) => oppWinRate(a) - oppWinRate(b) || a.localeCompare(b));
+      for (const opp of oppOrder) {
         const gs = groups[opp].sort((a, b) => (a.seed ?? 0) - (b.seed ?? 0));
         const wins = gs.filter((g) => g.won === true).length;
 
