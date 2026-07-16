@@ -82,6 +82,19 @@
       padding: 2px 14px 2px 0; text-align: left; border-bottom: 1px solid var(--border);
     }
     table.iters th { color: var(--muted); font-weight: 600; font-size: 11px; }
+    /* Deck tabs — one per pilot deck (Dragapult/Dusknoir vs Straight Dragapult). */
+    .decktabs { display: flex; gap: 6px; margin: 4px 0 2px; border-bottom: 1px solid var(--border); }
+    .decktab {
+      appearance: none; cursor: pointer; background: transparent; color: var(--muted);
+      border: 1px solid transparent; border-bottom: none; border-radius: 8px 8px 0 0;
+      padding: 8px 14px; font: inherit; font-weight: 650; font-size: 14px; margin-bottom: -1px;
+    }
+    .decktab:hover { color: var(--text); background: var(--panel-hover); }
+    .decktab.active {
+      color: var(--text); background: var(--panel);
+      border-color: var(--border); border-bottom: 1px solid var(--panel);
+    }
+    .decktab .n { color: var(--muted); font-weight: 600; font-variant-numeric: tabular-nums; }
   </style>
 </head>
 <body>
@@ -114,15 +127,67 @@
       return { w, d, l: gs.length - w - d, n: gs.length };
     }
 
+    // Which pilot DECK a game/iteration belongs to. Prefer the recorded label (new captures carry
+    // meta.deck / meta.our); fall back to the iteration tag ('dudun-*'/'straight-*' = the variant) so
+    // pre-existing runs still split correctly.
+    const DECK_ORDER = ['Dragapult / Dusknoir', 'Straight Dragapult'];
+    function deckLabel(x) {
+      // Normalize every signal into exactly two buckets (old captures used other label strings).
+      if (x && x.our === 'option_ranker_dudun') return 'Straight Dragapult';
+      if (x && x.our) return 'Dragapult / Dusknoir';
+      const tag = String((x && (x.deck || x.iteration || x.id)) || '');
+      if (/dudun|straight/i.test(tag)) return 'Straight Dragapult';
+      return 'Dragapult / Dusknoir';
+    }
+
     function render(data) {
-      const games = (data && data.games) || [];
-      const iterations = (data && data.iterations) || [];
+      const allGames = (data && data.games) || [];
+      const allIters = (data && data.iterations) || [];
       const app = document.getElementById('app');
       app.innerHTML = '';
-      if (!games.length && !iterations.length) {
+      if (!allGames.length && !allIters.length) {
         app.innerHTML = '<p class="empty">No games found. Capture some with <code>VIEWER=1</code>.</p>';
         return;
       }
+      // Split into one DECK bucket per pilot deck (keep DECK_ORDER first, then any others seen).
+      const seen = [];
+      for (const g of allGames) { const d = deckLabel(g); if (!seen.includes(d)) seen.push(d); }
+      for (const it of allIters) { const d = deckLabel(it); if (!seen.includes(d)) seen.push(d); }
+      const order = [...DECK_ORDER.filter((d) => seen.includes(d)), ...seen.filter((d) => !DECK_ORDER.includes(d))];
+      const decks = order.map((name) => ({
+        name,
+        games: allGames.filter((g) => deckLabel(g) === name),
+        iterations: allIters.filter((it) => deckLabel(it) === name),
+      }));
+
+      const body = document.createElement('div');
+      let active = decks[0].name;
+      const tabs = document.createElement('nav');
+      tabs.className = 'decktabs';
+      const paint = () => {
+        for (const b of tabs.children) b.classList.toggle('active', b.dataset.deck === active);
+        body.innerHTML = '';
+        renderDeck(body, decks.find((d) => d.name === active));
+      };
+      for (const d of decks) {
+        const n = d.games.length || d.iterations.reduce((s, i) => s + (i.total || 0), 0);
+        const b = document.createElement('button');
+        b.className = 'decktab';
+        b.dataset.deck = d.name;
+        b.innerHTML = d.name + ' <span class="n">' + n + '</span>';
+        b.addEventListener('click', () => { active = d.name; paint(); });
+        tabs.appendChild(b);
+      }
+      if (decks.length > 1) app.appendChild(tabs);   // only show tabs when >1 deck is present
+      app.appendChild(body);
+      paint();
+    }
+
+    // Render ONE deck's iteration bar + game grid into `host`.
+    function renderDeck(host, deck) {
+      const games = deck.games;
+      const iterations = deck.iterations;
+      const grid = document.createElement('div');
       // Iteration bar: the flat files are the LATEST run; iterations/<tag>/ are archived runs
       // over the SAME seeds (capture with ITER=<tag> SEEDED=1) — pick one to browse it, and
       // read the table to see whether a deck/pilot change moved the paired win rate.
@@ -136,25 +201,22 @@
         }).join('');
         bar.innerHTML =
           '<h2><span>Iterations</span><span class="tally">same seeds · evolving deck</span></h2>' +
-          '<div class="iterrow"><label>show <select id="iterpick"><option value="">latest</option>' +
+          '<div class="iterrow"><label>show <select class="iterpick"><option value="">latest</option>' +
           [...iterations].reverse().map((it) => '<option value="' + it.id + '">' + it.id + '</option>').join('') +
           '</select></label>' +
           '<table class="iters"><thead><tr><th>run</th><th>record</th><th>win rate</th></tr></thead>' +
           '<tbody>' + rows + '</tbody></table></div>';
-        app.appendChild(bar);
-        bar.querySelector('#iterpick').addEventListener('change', (event) => {
+        host.appendChild(bar);
+        bar.querySelector('.iterpick').addEventListener('change', (event) => {
           const it = iterations.find((x) => x.id === event.target.value);
-          renderGames(it ? it.games : games);
+          renderGames(it ? it.games : games, grid);
         });
       }
-      const grid = document.createElement('div');
-      grid.id = 'grid';
-      app.appendChild(grid);
-      renderGames(games);
+      host.appendChild(grid);
+      renderGames(games, grid);
     }
 
-    function renderGames(games) {
-      const app = document.getElementById('grid');
+    function renderGames(games, app) {
       app.innerHTML = '';
       if (!games.length) {
         app.innerHTML = '<p class="empty">No games in this run.</p>';
