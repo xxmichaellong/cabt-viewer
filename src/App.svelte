@@ -155,6 +155,13 @@
     if (initialReplayMode) {
       void replayStore.loadSaved();
     }
+    // Seeded human-play deep link: ?view=play&opp=<bot>&seed=<n>[&our=<pilot>] auto-starts the deal.
+    const scenarioOpp = initialSearchParam('opp');
+    const scenarioSeed = initialSearchParam('seed');
+    if (scenarioOpp && scenarioSeed) {
+      const scenarioOur = initialSearchParam('our') || 'dragapult_ex_spread';
+      void startSeededScenario(scenarioOur, scenarioOpp, Number(scenarioSeed));
+    }
     return stopThemeSync;
   });
   $effect(() => {
@@ -409,6 +416,19 @@
       selectionStore.clearFocus();
     }
   });
+
+  // Seeded human-play scenario: you pilot OUR deck (seat 0) on a reproducible (opp, seed) deal
+  // against one of our opponent bots. The ptcg bridge builds the decks and records your line +
+  // the ranker's would-be picks for later review. Launched from ?view=play&opp=<bot>&seed=<n>.
+  async function startSeededScenario(ourPilot: string, opponentPilot: string, seed: number) {
+    selectionStore.setSelectedHand(null);
+    resetSaveReplayStatus();
+    replayStore.clear();
+    homeMode = 'play';
+    player1Control = 'self';
+    player2Control = 'agent';
+    await gameSessionStore.run(() => localGameApi.startSeeded(ourPilot, opponentPilot, seed));
+  }
 
   async function startGame() {
     if (!(await ensureSelectedDecksLoaded())) {

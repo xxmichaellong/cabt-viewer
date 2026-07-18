@@ -322,11 +322,16 @@ export class LocalEngineController {
   }
 
   private async start(payload: any): Promise<EngineResponse> {
-    const playerControls = normalizePlayerControls(payload);
-    const player1Deck = resolveDeck(payload?.player1?.deck ?? [], 'Your deck');
-    const player2Deck = resolveDeck(payload?.player2?.deck ?? [], 'Player 2 deck');
+    // Seeded-scenario mode: the ptcg bridge builds both decks from pilot NAMES and plays our
+    // opponent bots itself, so the viewer sends {ourPilot, opponentPilot, seed} instead of
+    // decklists. You are always seat 0 (self); the opponent is the seat-1 bot. Decks stay empty
+    // (the value-head pWin bar hides itself — deliberately, so it can't hint your play).
+    const seeded = !!payload?.seeded;
+    const playerControls: [PlayerControl, PlayerControl] = seeded ? ['self', 'agent'] : normalizePlayerControls(payload);
+    const player1Deck = seeded ? [] : resolveDeck(payload?.player1?.deck ?? [], 'Your deck');
+    const player2Deck = seeded ? [] : resolveDeck(payload?.player2?.deck ?? [], 'Player 2 deck');
     this.decks = [player1Deck, player2Deck];
-    const agentPaths = [
+    const agentPaths = seeded ? [undefined, undefined] : [
       playerControls[0] === 'agent' ? agentPathForId(payload?.player1?.agentId) : undefined,
       playerControls[1] === 'agent' ? agentPathForId(payload?.player2?.agentId) : undefined,
     ];
@@ -345,20 +350,30 @@ export class LocalEngineController {
     this.playerControls = playerControls;
     this.replayModeLabel = `${controlLabel(playerControls[0])} vs ${controlLabel(playerControls[1])}`;
     this.replayPlayerLabels = [
-      payload?.player1?.name ?? 'Player 1',
-      payload?.player2?.name ?? 'Player 2',
+      payload?.player1?.name ?? (seeded ? 'You' : 'Player 1'),
+      payload?.player2?.name ?? (seeded ? (payload?.opponentPilot ?? 'Opponent') : 'Player 2'),
     ];
     this.logs = [{
       id: this.logId++,
-      message: `Started real CABT match (${this.replayModeLabel}).`,
+      message: seeded
+        ? `Started seeded game: you (${payload?.ourPilot ?? 'dragapult_ex_spread'}) vs ${payload?.opponentPilot ?? 'opponent'}, seed ${payload?.seed ?? 0}.`
+        : `Started real CABT match (${this.replayModeLabel}).`,
     }];
-    const response = await this.bridge.request({
-      command: 'start',
-      deck0: player1Deck,
-      deck1: player2Deck,
-      agentPaths,
-      agentControlled: playerControls.map((control) => control === 'agent'),
-    }, { allowStart: true });
+    const startCommand = seeded
+      ? {
+          command: 'start',
+          our: payload?.ourPilot ?? 'dragapult_ex_spread',
+          opp: payload?.opponentPilot ?? '',
+          seed: Number(payload?.seed ?? 0),
+        }
+      : {
+          command: 'start',
+          deck0: player1Deck,
+          deck1: player2Deck,
+          agentPaths,
+          agentControlled: playerControls.map((control) => control === 'agent'),
+        };
+    const response = await this.bridge.request(startCommand, { allowStart: true });
     this.applyBridgeResponse(response);
     return this.viewResponse();
   }
@@ -663,7 +678,9 @@ class CabtBridgeClient {
 
 function bridgeProcessCommand(): { command: string; args: string[] } {
   if (useNativeBridge()) {
-    return { command: process.env.PYTHON ?? 'python3', args: [BRIDGE_PATH] };
+    // CABT_PLAY_BRIDGE points at ptcg-kaggle's seeded human-play bridge (run/rulebased/play_bridge.py),
+    // which speaks this same protocol but on the CABT_SEED lab engine and drives our opponent bots.
+    return { command: process.env.PYTHON ?? 'python3', args: [process.env.CABT_PLAY_BRIDGE ?? BRIDGE_PATH] };
   }
   const dockerBridgePath = `/workspace/${toPosixPath(path.relative(WORKSPACE_ROOT, BRIDGE_PATH))}`;
   const sampleSubmissionDir = process.env.CABT_SAMPLE_SUBMISSION_DIR

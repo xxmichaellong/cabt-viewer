@@ -76,6 +76,22 @@ export const localGameApi = {
     });
   },
 
+  // Seeded-scenario start: the ptcg bridge builds both decks from pilot names and plays our
+  // opponent bots. You are seat 0 (self); the opponent bot is seat 1. Reproducible per (opp, seed).
+  startSeeded(ourPilot: string, opponentPilot: string, seed: number) {
+    return send({
+      type: 'startGame',
+      payload: {
+        seeded: true,
+        ourPilot,
+        opponentPilot,
+        seed,
+        player1: { name: 'You', control: 'self' },
+        player2: { name: opponentPilot, control: 'agent' },
+      },
+    });
+  },
+
   // The one gameplay command: answer the current decision with option indexes.
   select(seq: number, indexes: number[]) {
     return send({ type: 'select', payload: { seq, indexes } });
