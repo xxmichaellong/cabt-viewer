@@ -32,6 +32,13 @@ class AnalysisStore {
   selectedCandidate = $state<number | null>(null);
   planOverlay = $state(false);
   copyStatus = $state<'' | 'copied' | 'failed'>('');
+  /** The "report" composer on the analyze header: a free-text note the analyst types about the
+      current position; copyReport compiles it WITH the position block so the whole message pastes
+      straight to Claude (author-move / queue add). Reset on navigation (a note is tied to ITS
+      position — see gotoPosition). */
+  reportOpen = $state(false);
+  reportText = $state('');
+  reportStatus = $state<'' | 'copied' | 'failed'>('');
   private views: GameView[] = [];
 
   get currentPrompt(): PromptView | null {
@@ -130,6 +137,9 @@ class AnalysisStore {
     this.hoveredCandidate = null;
     this.selectedCandidate = null;
     this.copyStatus = '';
+    this.reportOpen = false;        // a report is about the position it was opened on; don't carry
+    this.reportText = '';           // a stale note (about a different board) onto the new prompt
+    this.reportStatus = '';
     if (syncUrl) {
       this.syncUrl();
     }
@@ -204,14 +214,14 @@ class AnalysisStore {
     this.filter = filter;
   }
 
-  /** Copy the author-move position header + the ranked slate for the current prompt.
-      Only valid on OUR decisions (prompt.ranker set): the decision N/total numbering indexes
-      the dashboard replay's decisions — copying from an opponent frame would mint a golden
-      for a position the analyst never viewed. The UI disables the button in that case. */
-  async copyPosition(): Promise<void> {
+  /** The author-move position block (header + top-5 ranked slate) for the current prompt, or null
+      when it has no ranking. Only OUR decisions (prompt.ranker set) get one: the decision N/total
+      numbering indexes the dashboard replay's decisions — a block from an opponent frame would point
+      at a position the analyst never viewed. Shared by copyPosition and copyReport. */
+  private positionBlock(): string | null {
     const prompt = this.currentPrompt;
-    if (!prompt || prompt.ranker === null || typeof navigator === 'undefined' || !navigator.clipboard) {
-      return;
+    if (!prompt || prompt.ranker === null) {
+      return null;
     }
     const { ordinal, total } = this.ourOrdinal;    // current prompt HAS ranker → counts itself; >= 1
     const file = this.meta.dashboardFile ?? 'optionranker_replay_?.json';
@@ -223,12 +233,58 @@ class AnalysisStore {
       const score = row.score !== null ? `[score=${row.score}]` : '';
       lines.push(`${mark} ${row.rank}. ${row.label} ${score} | ${row.reason}`);
     }
+    return lines.join('\n');
+  }
+
+  /** Copy just the position block (the UI disables the button on prompts with no ranking). */
+  async copyPosition(): Promise<void> {
+    const block = this.positionBlock();
+    if (block === null || typeof navigator === 'undefined' || !navigator.clipboard) {
+      return;
+    }
     try {
-      await navigator.clipboard.writeText(lines.join('\n'));
+      await navigator.clipboard.writeText(block);
       this.copyStatus = 'copied';
     } catch {
       this.copyStatus = 'failed';    // e.g. document unfocused / permission denied — never
     }                                // let stale clipboard contents masquerade as this position
+  }
+
+  openReport(): void {
+    if (this.currentPrompt?.ranker == null) {
+      return;                        // nothing to author on this prompt — no position to attach
+    }
+    this.reportOpen = true;
+    this.reportStatus = '';
+  }
+
+  closeReport(): void {
+    this.reportOpen = false;
+    this.reportStatus = '';
+  }
+
+  /** Compile the analyst's free-text note + the position block into ONE message and copy it, so the
+      whole thing pastes to Claude (which routes it to author-move or `golden.py queue add`). The
+      `REPORT —` prefix marks it as an intentional issue report vs a raw position paste. Keeps the
+      composer open with the text intact on failure (clipboard blocked); clears + closes on success. */
+  async copyReport(): Promise<void> {
+    const text = this.reportText.trim();
+    const block = this.positionBlock();
+    if (!text || block === null) {
+      return;                        // Save is disabled while empty; guard the Enter path too
+    }
+    if (typeof navigator === 'undefined' || !navigator.clipboard) {
+      this.reportStatus = 'failed';
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(`REPORT — ${text}\n\n${block}`);
+      this.reportStatus = 'copied';
+      this.reportText = '';
+      this.reportOpen = false;
+    } catch {
+      this.reportStatus = 'failed';
+    }
   }
 
   private syncUrl(): void {

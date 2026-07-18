@@ -104,6 +104,27 @@
   let meta = $derived(analysisStore.meta);
   let position = $derived(analysisStore.filteredPositions.indexOf(analysisStore.promptIdx));
 
+  // The "report" composer (write a note + copy it with the position for pasting to Claude).
+  let reportEl = $state<HTMLTextAreaElement | null>(null);
+  // Enter copies (Shift+Enter = newline); Esc closes. Local to the textarea so it never reaches the
+  // window arrow-key nav (which also bails inside inputs — see onKeydown).
+  function onReportKeydown(event: KeyboardEvent): void {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      void analysisStore.copyReport();
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      analysisStore.closeReport();
+    }
+  }
+  // Focus the textarea when the composer opens. focus() touches no reactive state, so no loop
+  // (unlike the store.load() effect that needed untrack — see docs/analysis-site.md).
+  $effect(() => {
+    if (analysisStore.reportOpen && reportEl) {
+      reportEl.focus();
+    }
+  });
+
   let watchUrl = $derived(
     `/?view=replay&replayUrl=${encodeURIComponent(analysisStore.replayUrl)}`,
   );
@@ -232,6 +253,45 @@
               : analysisStore.copyStatus === 'failed' ? 'copy FAILED — retry'
               : 'copy position'}
           </button>
+          <div class="report-tool">
+            <button
+              class:on={analysisStore.reportOpen}
+              onclick={() => (analysisStore.reportOpen ? analysisStore.closeReport() : analysisStore.openReport())}
+              disabled={prompt.ranker === null}
+              title={prompt.ranker === null
+                ? 'Only our decisions can be reported (this prompt carries no ranking)'
+                : 'Write a note about this position, then copy note + board state to paste to Claude'}
+            >
+              {analysisStore.reportStatus === 'copied' ? 'report copied' : 'report'}
+            </button>
+            {#if analysisStore.reportOpen}
+              <div class="report-pop">
+                <label class="report-head" for="report-note">
+                  Report this position
+                  <small>note + the position slate get copied together — paste to Claude</small>
+                </label>
+                <textarea
+                  id="report-note"
+                  bind:this={reportEl}
+                  bind:value={analysisStore.reportText}
+                  onkeydown={onReportKeydown}
+                  rows="4"
+                  placeholder="What should the ranker do here, and why? (Enter to copy · Shift+Enter for a newline · Esc to close)"
+                ></textarea>
+                <div class="report-actions">
+                  <span class="report-hint" class:fail={analysisStore.reportStatus === 'failed'}>
+                    {analysisStore.reportStatus === 'failed' ? 'clipboard blocked — retry' : ''}
+                  </span>
+                  <button onclick={() => analysisStore.closeReport()}>cancel</button>
+                  <button
+                    class="primary"
+                    disabled={!analysisStore.reportText.trim()}
+                    onclick={() => void analysisStore.copyReport()}
+                  >copy report</button>
+                </div>
+              </div>
+            {/if}
+          </div>
           <button class:on={!railCollapsed} onclick={toggleRail} title="Show/hide the turn rail">turns</button>
           <button class:on={!panelsCollapsed} onclick={togglePanels} title="Show/hide the analysis panels">panels</button>
           <a href={watchUrl} title="Watch this game with animations in the replayer (the analysis view shows settled snapshots)">animated replay ▸</a>
@@ -239,7 +299,7 @@
       </header>
 
       <div class="board-viewport" bind:this={viewportEl} style={`top: ${headerH}px`}>
-        <div class="board-scaler" bind:this={scalerEl} style={`transform: scale(${boardScale})`}>
+        <div class="board-scaler" bind:this={scalerEl} style={`transform: translate(-50%, -50%) scale(${boardScale})`}>
       <TableShell debugZones={false} replayMode={false}>
         <BoardLayer>
           {#each view.players as panelPlayer (panelPlayer.index)}
@@ -392,12 +452,17 @@
     left: 0;
     right: 0;
     bottom: 0;
-    display: grid;
-    place-items: center;
     overflow: hidden;
   }
 
+  /* Absolute-centered so an oversized natural box (the landscape design box is wider than a
+     narrow column) centers on the viewport and overflows symmetrically instead of start-aligning
+     and clipping off the right. translate(-50%,-50%) centers regardless of the box's own size;
+     scale then fits it (see the boardScale effect). */
   .board-scaler {
+    position: absolute;
+    top: 50%;
+    left: 50%;
     width: max-content;
     transform-origin: center;
   }
@@ -406,12 +471,16 @@
     /* Pin the shell to a FIXED design box AND its whole card-size cascade (board + hand card
        widths are otherwise viewport-clamped — pinning the box but not the cards made the board
        sparse at large windows). The frozen geometry matches a well-proportioned ~1440x950
-       native window; the scaler then fits it to the column uniformly at ANY window size. */
+       native window; the scaler then fits it to the column uniformly at ANY window size.
+       Width MUST be the LANDSCAPE native width, not --min-table-width (the 760px floor): pinning
+       the box to the floor made it portrait, so the scaler fit it to HEIGHT and left the board a
+       narrow strip centered in a wide column. A landscape box fits to WIDTH and fills the column. */
+    --board-design-w: 1440px;
     --board-design-h: 880px;
     --board-h: calc(var(--board-design-h) - var(--board-top-inset) - var(--board-bottom-inset));
     --board-card-w: 80px;
     --hand-card-w: 112px;
-    width: var(--min-table-width);
+    width: var(--board-design-w);
     min-width: 0;
     height: var(--board-design-h);
     min-height: var(--board-design-h);
@@ -553,6 +622,93 @@
     text-decoration: none;
     font-size: 11px;
     font-weight: 700;
+  }
+
+  /* Report composer: a small popover anchored under its button. */
+  .report-tool {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+
+  .report-pop {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    z-index: 40;
+    width: 320px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px;
+    border: 1px solid var(--surface-toolbar-border);
+    border-radius: 8px;
+    background: var(--surface-panel-bg);
+    box-shadow: var(--surface-toolbar-shadow);
+  }
+
+  .report-head {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+
+  .report-head small {
+    font-weight: 400;
+    font-size: 10px;
+    color: var(--text-secondary);
+  }
+
+  .report-pop textarea {
+    width: 100%;
+    box-sizing: border-box;
+    resize: vertical;
+    min-height: 64px;
+    padding: 6px 8px;
+    border: 1px solid var(--surface-inset-border);
+    border-radius: 6px;
+    background: var(--surface-inset-bg);
+    color: var(--text-primary);
+    font: inherit;
+    font-size: 12px;
+    line-height: 1.4;
+  }
+
+  .report-pop textarea:focus {
+    outline: none;
+    border-color: var(--accent-base);
+  }
+
+  .report-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .report-hint {
+    flex: 1;
+    font-size: 10px;
+    color: var(--text-secondary);
+  }
+
+  .report-hint.fail {
+    color: var(--danger-text);
+    font-weight: 700;
+  }
+
+  .report-pop .primary {
+    border-color: var(--accent-base);
+    background: var(--accent-base);
+    color: var(--text-on-accent);
+    font-weight: 700;
+  }
+
+  .report-pop .primary:disabled {
+    opacity: 0.5;
+    cursor: default;
   }
 
   .strip {

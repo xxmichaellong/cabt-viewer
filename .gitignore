@@ -13,3 +13,9 @@ public/local-replays
 __pycache__/
 public/game-logs/pasted-*.json
 public/game-logs/pi-vs-hydrapple-policy.json
+# Bulk game-log data (tens of GB): iteration/archive captures + Kaggle ladder episodes.
+# Only the 3 small reference logs are tracked; these are never committed.
+public/game-logs/archive/
+public/game-logs/iterations/
+public/game-logs/ladder-ep*.json
+public/game-logs/optionranker_*.json
