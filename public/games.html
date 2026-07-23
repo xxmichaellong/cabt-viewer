@@ -131,9 +131,13 @@
     // meta.deck / meta.our); fall back to the iteration tag ('dudun-*'/'straight-*' = the variant) so
     // pre-existing runs still split correctly.
     const DECK_ORDER = ['Dragapult / Dusknoir', 'Straight Dragapult'];
+    const DRAGAPULT_OURS = ['option_ranker', 'option_ranker_dudun', 'dragapult_ex_spread', 'ref'];
     function deckLabel(x) {
-      // Normalize every signal into exactly two buckets (old captures used other label strings).
+      // Normalize the Dragapult captures into exactly two buckets (old captures used other label
+      // strings); any OTHER pilot deck (hydrapple_spec, ...) gets its own tab via its recorded
+      // meta.deck label.
       if (x && x.our === 'option_ranker_dudun') return 'Straight Dragapult';
+      if (x && x.our && !DRAGAPULT_OURS.includes(x.our) && x.deck) return x.deck;
       if (x && x.our) return 'Dragapult / Dusknoir';
       const tag = String((x && (x.deck || x.iteration || x.id)) || '');
       if (/dudun|straight/i.test(tag)) return 'Straight Dragapult';
