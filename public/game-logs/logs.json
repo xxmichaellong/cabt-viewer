@@ -1,17 +1,33 @@
 {
   "logs": [
     {
+      "id": "replay-36",
+      "name": "replay_36 - Cynthia Garchomp vs Mega Kangaskhan",
+      "file": "replay_36.json",
+      "players": [
+        "Cynthia's Garchomp ex",
+        "Mega Kangaskhan ex toolbox"
+      ],
+      "description": "Imported from ~/Downloads/replay_36.json (197 frames; player 0 wins)."
+    },
+    {
       "id": "cabt-runner-sample",
       "name": "CABT runner sample",
       "file": "cabt-match.json",
-      "players": ["Runner policy", "Runner policy"],
+      "players": [
+        "Runner policy",
+        "Runner policy"
+      ],
       "description": "Raw CABT runner output from the local sample policy."
     },
     {
       "id": "kaggle-context-sample",
       "name": "Kaggle context sample",
       "file": "kaggle-context.json",
-      "players": ["Sample agent", "Sample agent"],
+      "players": [
+        "Sample agent",
+        "Sample agent"
+      ],
       "description": "Kaggle-environments context artifact for replay adapter testing."
     }
   ]
