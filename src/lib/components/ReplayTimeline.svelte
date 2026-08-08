@@ -1,12 +1,21 @@
 <script lang="ts">
   import type { ReplaySnapshot, ReplayStep } from '../game/replay';
+  import type { ReplayDecisionAnalysis } from '../game/replayAnalysis';
+  import SearchInspector from './SearchInspector.svelte';
 
   type Props = {
     replay: ReplaySnapshot;
     step: ReplayStep;
+    stateIndex: number;
     displayLabel?: string;
     stepIndex: number;
+    exactDecisions?: boolean;
+    exactMaxStateIndex?: number;
     copiedForkPoint?: boolean;
+    analysisWarning?: string;
+    analysis?: ReplayDecisionAnalysis | null;
+    viewerEvalSeat0?: number | null;
+    nextDisagreementStateIndex?: number | null;
     isPlaying?: boolean;
     playbackSpeed?: number;
     setPlaybackSpeed?: (speed: number) => void;
@@ -19,14 +28,22 @@
     togglePlayback: () => void;
     backToReplayHome: () => void;
     copyForkPoint: () => void;
+    nextDisagreement: () => void;
   };
 
   let {
     replay,
     step,
+    stateIndex,
     displayLabel,
     stepIndex,
+    exactDecisions = false,
+    exactMaxStateIndex = 0,
     copiedForkPoint = false,
+    analysisWarning = '',
+    analysis = null,
+    viewerEvalSeat0 = null,
+    nextDisagreementStateIndex = null,
     isPlaying = false,
     playbackSpeed = 1,
     setPlaybackSpeed = () => {},
@@ -39,6 +56,7 @@
     togglePlayback,
     backToReplayHome,
     copyForkPoint,
+    nextDisagreement,
   }: Props = $props();
 
   const SPEEDS = [
@@ -50,15 +68,31 @@
 
   let maxStepIndex = $derived(Math.max(0, replay.steps.length - 1));
   let maxStateIndex = $derived(Math.max(0, replay.stateCount - 1));
-  let actionValue = $derived(step.actionIndex === null ? 'Initial' : `${step.actionIndex + 1} / ${replay.actionCount}`);
-  let stateValue = $derived(`${step.stateIndex} / ${maxStateIndex}`);
+  let maxTimelineIndex = $derived(exactDecisions ? exactMaxStateIndex : maxStepIndex);
+  let timelinePosition = $derived(exactDecisions ? stateIndex : stepIndex);
+  let actionName = $derived(exactDecisions ? 'Decision' : 'Action');
+  let actionValue = $derived(exactDecisions
+    ? `${stateIndex + 1} / ${exactMaxStateIndex + 1}`
+    : (step.actionIndex === null ? 'Initial' : `${step.actionIndex + 1} / ${replay.actionCount}`));
+  let stateValue = $derived(exactDecisions
+    ? `${stateIndex} → ${Math.min(stateIndex + 1, maxStateIndex)} / ${maxStateIndex}`
+    : `${stateIndex} / ${maxStateIndex}`);
   let timelineLabel = $derived(displayLabel || step.label);
-  let payloadPreview = $derived(formatPayload(step.payload));
+  let payloadPreview = $derived(exactDecisions ? '' : formatPayload(step.payload));
+  let turnValue = $derived(exactDecisions
+    ? replay.views[Math.min(stateIndex + 1, maxStateIndex)]?.turn ?? step.turn
+    : step.turn);
   let createdLabel = $derived(Number.isFinite(replay.created) ? new Date(replay.created).toLocaleString() : '');
   let playerLabel = $derived(replay.players.map((player) => player.name).join(' vs '));
+  let searchInspectorOpen = $state(false);
 
-  function onStepInput(event: Event) {
-    setStep(Number((event.currentTarget as HTMLInputElement).value));
+  function onTimelineInput(event: Event) {
+    const index = Number((event.currentTarget as HTMLInputElement).value);
+    if (exactDecisions) {
+      setStateIndex(index);
+    } else {
+      setStep(index);
+    }
   }
 
   function onStateInput(event: Event) {
@@ -72,6 +106,28 @@
     const json = JSON.stringify(payload);
     return json.length > 180 ? `${json.slice(0, 177)}...` : json;
   }
+
+  function selectionLabel(selection: number[] | undefined): string {
+    if (!selection?.length) {
+      return 'No selection';
+    }
+    return selection.map((index) =>
+      analysis?.legalActions?.[index]?.label || `Option ${index}`,
+    ).join(' + ');
+  }
+
+  function analysisTitle(value: ReplayDecisionAnalysis): string {
+    if (value.error) {
+      return 'Analysis unavailable';
+    }
+    if (value.searched) {
+      return value.changed ? 'Search changed the move' : 'Search agreed with policy';
+    }
+    if (value.mode === 'line-continuation') {
+      return 'Search line continued';
+    }
+    return value.mode ? `${value.mode} move` : 'Recorded decision';
+  }
 </script>
 
 <button class="replay-back-button" aria-label="Back to replay list" onclick={backToReplayHome}>Back</button>
@@ -81,14 +137,14 @@
     <span>{timelineLabel}</span>
   </div>
   <div class="replay-controls" aria-label="Replay playback controls">
-    <button aria-label="First action" onclick={firstStep} disabled={stepIndex === 0}>|&lt;</button>
-    <button aria-label="Previous action" onclick={previousStep} disabled={stepIndex === 0}>&lt;</button>
+    <button aria-label={exactDecisions ? 'First decision' : 'First action'} onclick={firstStep} disabled={timelinePosition === 0}>|&lt;</button>
+    <button aria-label={exactDecisions ? 'Previous decision' : 'Previous action'} onclick={previousStep} disabled={timelinePosition === 0}>&lt;</button>
     <button
       class="playback-toggle"
       aria-label={isPlaying ? 'Pause replay' : 'Play replay'}
       aria-pressed={isPlaying}
       onclick={togglePlayback}
-      disabled={maxStepIndex === 0}
+      disabled={maxTimelineIndex === 0}
     >
       {#if isPlaying}
         <span class="pause-icon" aria-hidden="true"><span></span><span></span></span>
@@ -97,15 +153,15 @@
       {/if}
     </button>
     <input
-      aria-label="Action step"
+      aria-label={exactDecisions ? 'Decision step' : 'Action step'}
       type="range"
       min="0"
-      max={maxStepIndex}
-      value={stepIndex}
-      oninput={onStepInput}
+      max={maxTimelineIndex}
+      value={timelinePosition}
+      oninput={onTimelineInput}
     />
-    <button aria-label="Next action" onclick={nextStep} disabled={stepIndex >= maxStepIndex}>&gt;</button>
-    <button aria-label="Last action" onclick={lastStep} disabled={stepIndex >= maxStepIndex}>&gt;|</button>
+    <button aria-label={exactDecisions ? 'Next decision' : 'Next action'} onclick={nextStep} disabled={timelinePosition >= maxTimelineIndex}>&gt;</button>
+    <button aria-label={exactDecisions ? 'Last decision' : 'Last action'} onclick={lastStep} disabled={timelinePosition >= maxTimelineIndex}>&gt;|</button>
     <select
       class="speed-select"
       aria-label="Playback speed"
@@ -123,34 +179,88 @@
     <strong>{replay.name}</strong>
     <span>{playerLabel}</span>
     <span>{createdLabel}</span>
+    {#if exactDecisions}
+      <span>Exact decisions · animations off</span>
+    {/if}
   </div>
 
   <div class="replay-readout">
-    <span>Action <b>{actionValue}</b></span>
+    <span>{actionName} <b>{actionValue}</b></span>
     <span>State <b>{stateValue}</b></span>
-    <span>Turn <b>{step.turn}</b></span>
+    <span>Turn <b>{turnValue}</b></span>
     <span>{timelineLabel}</span>
   </div>
 
   <div class="state-controls">
     <label>
-      State
+      {exactDecisions ? 'Decision state' : 'State'}
       <input
         aria-label="State index"
         type="number"
         min="0"
-        max={maxStateIndex}
-        value={step.stateIndex}
+        max={exactDecisions ? exactMaxStateIndex : maxStateIndex}
+        value={stateIndex}
         oninput={onStateInput}
       />
     </label>
-    <button onclick={copyForkPoint}>{copiedForkPoint ? 'Fork point copied' : 'Copy fork point'}</button>
+    <button onclick={copyForkPoint}>{copiedForkPoint ? 'Checkpoint copied' : 'Copy checkpoint'}</button>
+    {#if nextDisagreementStateIndex !== null}
+      <button onclick={nextDisagreement}>Next search change · state {nextDisagreementStateIndex}</button>
+    {/if}
   </div>
+
+  {#if analysisWarning}
+    <small class="analysis-warning">{analysisWarning}</small>
+  {/if}
+
+  {#if analysis}
+    <section class:changed={analysis.changed} class="decision-analysis" aria-label="Decision comparison">
+      <strong>{analysisTitle(analysis)}</strong>
+      {#if analysis.error}
+        <span>{analysis.error}</span>
+      {:else}
+        <span>Played <b>{selectionLabel(analysis.playedSelection)}</b></span>
+        {#if analysis.policySelection}
+          <span>Policy <b>{selectionLabel(analysis.policySelection)}</b></span>
+        {/if}
+        {#if analysis.searchSelection}
+          <span>Search <b>{selectionLabel(analysis.searchSelection)}</b></span>
+        {/if}
+        {#if analysis.completedTraversals !== undefined}
+          <small>
+            {analysis.completedTraversals} sims
+            {#if analysis.distinctEvaluations !== undefined}
+              · {analysis.distinctEvaluations} evals
+            {/if}
+            {#if analysis.stopReason}
+              · {analysis.stopReason}
+            {/if}
+          </small>
+        {/if}
+        {#if analysis.searched}
+          <button class="inspect-search" onclick={() => (searchInspectorOpen = true)}>Inspect search</button>
+        {/if}
+        {#if analysis.rationale}
+          <small>{analysis.rationale}</small>
+        {/if}
+      {/if}
+    </section>
+  {/if}
 
   {#if payloadPreview}
     <pre>{payloadPreview}</pre>
   {/if}
 </aside>
+
+{#if searchInspectorOpen && analysis?.searched}
+  <SearchInspector
+    {analysis}
+    seat0Name={replay.players[0]?.name ?? 'Player 1'}
+    seat1Name={replay.players[1]?.name ?? 'Player 2'}
+    {viewerEvalSeat0}
+    close={() => (searchInspectorOpen = false)}
+  />
+{/if}
 
 <style>
   .replay-dock {
@@ -219,7 +329,7 @@
 
   .replay-details {
     position: absolute;
-    top: 414px;
+    top: 176px;
     right: 14px;
     z-index: 9;
     width: 148px;
@@ -242,6 +352,52 @@
     min-width: 0;
     font-size: 11px;
     line-height: 1.2;
+  }
+
+  .decision-analysis {
+    display: grid;
+    gap: 5px;
+    padding: 7px;
+    border: 1px solid var(--surface-inset-border);
+    border-radius: 5px;
+    background: var(--surface-inset-bg);
+    font-size: 10px;
+    line-height: 1.25;
+  }
+
+  .decision-analysis.changed {
+    border-color: var(--warning-border, var(--surface-inset-border));
+  }
+
+  .analysis-warning {
+    padding: 6px;
+    border: 1px solid var(--warning-border, var(--surface-inset-border));
+    border-radius: 5px;
+    color: var(--text-secondary);
+    font-size: 10px;
+    line-height: 1.25;
+  }
+
+  .decision-analysis span,
+  .decision-analysis small {
+    color: var(--text-secondary);
+    overflow-wrap: anywhere;
+  }
+
+  .decision-analysis b {
+    color: var(--text-primary);
+  }
+
+  .inspect-search {
+    width: 100%;
+    min-height: 28px;
+    padding: 5px 7px;
+    border: 1px solid var(--accent-base, var(--button-border));
+    border-radius: 5px;
+    background: var(--accent-soft, var(--button-bg));
+    color: var(--text-primary);
+    font-size: 10px;
+    font-weight: 800;
   }
 
   .replay-meta span,

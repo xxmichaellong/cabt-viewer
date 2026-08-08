@@ -45,6 +45,7 @@
   } from './lib/game/decisions';
   import { commitPick, observeDecision, pickTally, runProgress, type EffectRun } from './lib/game/effectSelector';
   import { loadAgentOptions, loadDeckOptions, loadGameLogs, type AgentOption, type DeckOption, type GameLogEntry } from './lib/home/catalog';
+  import { searchedGameReplayUrl, type SearchedGame } from './lib/gameBank/searchedGames';
   import { kaggleEpisodeReplayUrl, type KaggleEpisodeDay, type KaggleEpisodeSummary } from './lib/kaggle/episodes';
   import type { ActionTimelineEvent, BoardSlotRef, DecisionOptionView, PokemonSlotView, PlayerView } from './lib/game/types';
   import { deckImportStore } from './state/deckImport.svelte';
@@ -77,6 +78,7 @@
   const analyzeReplayUrl = initialSearchParam('replayUrl');
   const initialReplayMode = initialSearchParam('view') === 'replay';
   let homeMode = $state<HomeMode>(initialReplayMode ? 'logs' : 'play');
+  let lastGameBankGameId = $state(initialSearchParam('gameBank'));
   let lastKaggleDaySlug = $state(initialSearchParam('kaggleDay'));
   let lastKaggleEpisodeId = $state(initialSearchParam('kaggleEpisode'));
   let agents = $state<AgentOption[]>([]);
@@ -98,18 +100,27 @@
   let saveReplayMessage = $state('');
   let saveReplayError = $state('');
   let replayMode = $derived(homeMode === 'logs' && !!replayStore.replay);
+  let analysisMode = $derived(replayMode && replayStore.analysisVisibility.mode === 'analysis');
+  let analysisModeLabel = $derived(analysisMode
+    ? (replayStore.analysisVisibility.prizes === 'full' ? 'Analysis · open information' : 'Analysis · partial recording')
+    : '');
+  let replayAnimationsEnabled = $derived(replayStore.animationsEnabled);
+  let motionDisabled = $derived(analysisMode && !replayAnimationsEnabled);
+  let configuredAnalysisReplay = $state('');
   let game = $derived(replayMode ? replayStore.currentView : gameStore.game);
   let animationScopeKey = $derived(replayMode
-    ? `replay-${replayStore.stepIndex}-${replayStore.animationPhaseIndex}`
+    ? `replay-${replayAnimationsEnabled ? 'animated' : 'exact'}-${replayStore.stepIndex}-${replayStore.stateIndex}-${replayStore.animationPhaseIndex}`
     : `live-${game?.actionTimeline?.at(-1)?.id ?? 0}`);
   // Live playback steps carry exactly their own events; the interactive view
   // that lands afterwards carries the cumulative timeline for the log panel,
   // which must not re-enter the animation layers.
-  let animationEvents = $derived(replayMode || gameStore.playingSequence
+  let animationEvents = $derived(replayMode && !replayAnimationsEnabled
+    ? []
+    : replayMode || gameStore.playingSequence
     ? (game?.actionTimeline ?? [])
     : []);
   let animationStepEvents = $derived(replayMode
-    ? (replayStore.currentStep?.actionTimeline ?? [])
+    ? (replayAnimationsEnabled && replayStore.isTimelinePosition ? replayStore.currentStep?.actionTimeline ?? [] : [])
     : animationEvents);
   // Live turn boundary for the animation layers: stale claims/sprites are
   // released when the turn counter advances. Constant in replay.
@@ -138,6 +149,20 @@
   let showLogs = $derived(viewSettingsStore.showLogs);
   let theme = $derived(viewSettingsStore.theme);
   let themePreference = $derived(viewSettingsStore.themePreference);
+
+  $effect(() => {
+    const replayId = analysisMode ? replayStore.replay?.id ?? '' : '';
+    if (!replayId) {
+      configuredAnalysisReplay = '';
+      return;
+    }
+    if (configuredAnalysisReplay === replayId) {
+      return;
+    }
+    configuredAnalysisReplay = replayId;
+    viewSettingsStore.followActive = false;
+    viewSettingsStore.viewIndex = 0;
+  });
   let selectedPlayer1Agent = $derived(agents.find((agent) => agent.id === player1AgentId));
   let selectedPlayer2Agent = $derived(agents.find((agent) => agent.id === player2AgentId));
   let selectedPlayer1Deck = $derived(decks.find((deck) => deck.id === player1DeckSource));
@@ -282,6 +307,9 @@
   });
 
   function replayFinalEvolutionEvents(): ActionTimelineEvent[] {
+    if (!replayAnimationsEnabled) {
+      return [];
+    }
     const step = replayStore.currentStep;
     const phases = step?.animationPhases ?? [];
     if (!step || replayStore.animationPhaseIndex < phases.length) {
@@ -345,7 +373,7 @@
     // seat is skipped (labelled unavailable), never drawn as a degraded line.
     void evalStore.loadReplayCurve(frames, replayStore.decks, replayStore.honestSeats);
   });
-  let replayStateIndex = $derived(replayStore.currentStep?.stateIndex ?? 0);
+  let replayStateIndex = $derived(replayStore.stateIndex);
   let oppIndex = $derived(topPlayer?.index ?? (viewIndex === 0 ? 1 : 0));
   let showEvalBar = $derived(replayMode ? evalStore.curveForSeat(viewIndex).length > 0 : evalStore.live);
   let evalBarPWin = $derived(replayMode ? evalStore.pWinAtState(replayStateIndex, viewIndex) : evalStore.pWin);
@@ -359,6 +387,11 @@
     replayMode && evalStore.omniscientState === 'ready'
       ? evalStore.omniscientAt(replayStateIndex, viewIndex)
       : null,
+  );
+  let inspectorSeat0Eval = $derived(
+    replayMode && evalStore.omniscientState === 'ready'
+      ? evalStore.omniscientAt(replayStateIndex, 0)
+      : replayMode ? evalStore.pWinAtState(replayStateIndex, 0) : null,
   );
   // Whether the judge's line CAN be computed for this replay: a raw/omniscient
   // save (honest seats) whose frames carry the engine search seed. Kaggle/legacy
@@ -541,6 +574,7 @@
     viewSettingsStore.resetView();
     lastKaggleDaySlug = '';
     lastKaggleEpisodeId = '';
+    lastGameBankGameId = '';
     homeMode = 'logs';
     replaceReplayUrl(log.file || log.id);
     await replayStore.loadSaved(log.file || log.id);
@@ -554,8 +588,23 @@
     viewSettingsStore.resetView();
     lastKaggleDaySlug = day.slug;
     lastKaggleEpisodeId = episode.episodeId;
+    lastGameBankGameId = '';
     homeMode = 'logs';
     replaceKaggleReplayUrl(day, episode, replayUrl);
+    await replayStore.loadUrl(replayUrl);
+  }
+
+  async function loadSearchedGame(game: SearchedGame) {
+    const replayUrl = searchedGameReplayUrl(game);
+    gameSessionStore.reset();
+    resetSaveReplayStatus();
+    zoneViewerStore.close();
+    viewSettingsStore.resetView();
+    lastKaggleDaySlug = '';
+    lastKaggleEpisodeId = '';
+    lastGameBankGameId = game.id;
+    homeMode = 'logs';
+    replaceSearchedGameReplayUrl(game, replayUrl);
     await replayStore.loadUrl(replayUrl);
   }
 
@@ -873,6 +922,25 @@
     params.set('kaggleEpisode', episode.episodeId);
     params.set('replayUrl', replayUrl);
     params.delete('replay');
+    params.delete('gameBank');
+    params.delete('state');
+    params.delete('step');
+    window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}${window.location.hash}`);
+  }
+
+  function replaceSearchedGameReplayUrl(game: SearchedGame, replayUrl: string) {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    const params = new URLSearchParams(window.location.search);
+    params.set('view', 'replay');
+    params.set('gameBank', game.id);
+    params.set('replayUrl', replayUrl);
+    params.delete('replay');
+    params.delete('kaggleDay');
+    params.delete('kaggleEpisode');
+    params.delete('state');
+    params.delete('step');
     window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}${window.location.hash}`);
   }
 
@@ -886,6 +954,9 @@
     params.delete('replayUrl');
     params.delete('kaggleDay');
     params.delete('kaggleEpisode');
+    params.delete('gameBank');
+    params.delete('state');
+    params.delete('step');
     window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}${window.location.hash}`);
   }
 </script>
@@ -928,6 +999,7 @@
         {catalogError}
         kaggleSelectedSlug={lastKaggleDaySlug}
         kaggleSelectedEpisodeId={lastKaggleEpisodeId}
+        gameBankSelectedGameId={lastGameBankGameId}
         setHomeMode={(nextMode) => {
           homeMode = nextMode;
           if (nextMode === 'logs') {
@@ -939,6 +1011,7 @@
         startGame={startGame}
         {loadGameLog}
         {loadKaggleEpisode}
+        {loadSearchedGame}
         refreshCatalog={() => void refreshCatalog()}
       />
   {:else if bottomPlayer && topPlayer}
@@ -949,7 +1022,7 @@
         turn={game.turn}
         activePlayerName={game.players[actingPlayerIndex]?.name}
         resultLabel={gameResultLabel}
-        modeLabel={replayMode ? '' : modeLabel}
+        modeLabel={replayMode ? analysisModeLabel : modeLabel}
         {gameFinished}
       />
 
@@ -972,6 +1045,10 @@
         bind:showCardImages={viewSettingsStore.showCardImages}
         bind:actionStepDelayMs={viewSettingsStore.actionStepDelayMs}
         bind:themePreference={viewSettingsStore.themePreference}
+        {replayMode}
+        {analysisMode}
+        analysisAnimationsEnabled={replayAnimationsEnabled}
+        setAnalysisAnimationsEnabled={(enabled) => replayStore.setAnimationsEnabled(enabled)}
         busy={commandBusy}
         promptActive={replayMode || !!dialogDecision || boardAnswerable}
         {gameFinished}
@@ -988,9 +1065,16 @@
         <ReplayTimeline
           replay={replayStore.replay}
           step={replayStore.currentStep}
+          stateIndex={replayStore.stateIndex}
           displayLabel={replayStore.currentDisplayLabel}
           stepIndex={replayStore.stepIndex}
           copiedForkPoint={replayStore.copiedForkPoint}
+          exactDecisions={!replayAnimationsEnabled}
+          exactMaxStateIndex={replayStore.maxDecisionStateIndex}
+          analysisWarning={replayStore.analysisVisibility.warning}
+          analysis={replayStore.currentDecisionAnalysis}
+          viewerEvalSeat0={inspectorSeat0Eval}
+          nextDisagreementStateIndex={replayStore.nextDisagreementStateIndex}
           isPlaying={replayStore.isPlaying}
           playbackSpeed={replayStore.playbackSpeed}
           setPlaybackSpeed={(speed) => replayStore.setPlaybackSpeed(speed)}
@@ -1003,6 +1087,7 @@
           togglePlayback={() => replayStore.togglePlayback()}
           backToReplayHome={resetGame}
           copyForkPoint={() => void replayStore.copyForkPoint()}
+          nextDisagreement={() => replayStore.nextDisagreement()}
         />
         <div class="eval-graph-dock">
           <EvalGraph
@@ -1057,7 +1142,7 @@
         </PromptDock>
       {/if}
 
-      <BoardLayer>
+      <BoardLayer {motionDisabled}>
         <!-- Panels are keyed by player.index and rendered in a stable order, so
              the follow-active seat flip is a pure CSS reposition (side class)
              over the SAME Hand instance — the hand's card elements survive the
@@ -1072,7 +1157,9 @@
               selectedHand={selectedHand}
               disabled={!canAct(panelPlayer.index)}
               playableIndexes={playableIndexesFor(panelPlayer)}
-              concealed={isBottom ? (!replayMode && !isSelfControlled(panelPlayer.index)) : true}
+              concealed={analysisMode ? false : (isBottom ? (!replayMode && !isSelfControlled(panelPlayer.index)) : true)}
+              rotateCards={analysisMode && !isBottom}
+              {motionDisabled}
               onSelect={selectHandCard}
               onDrag={onHandDrag}
               onDragEnd={clearDragState}
@@ -1114,6 +1201,8 @@
           animationApplySignal={animationApplySignal}
           evolutionChromeEvents={finalEvolutionEvents}
           {replayMode}
+          openInformation={analysisMode}
+          {motionDisabled}
           {showEvalBar}
           evalPWin={evalBarPWin}
           evalOppPWin={evalBarOppPWin}

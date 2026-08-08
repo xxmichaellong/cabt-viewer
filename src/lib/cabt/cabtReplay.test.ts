@@ -8,6 +8,34 @@ import { CabtAreaType } from './types';
 const here = dirname(fileURLToPath(import.meta.url));
 
 describe('cabtReplayToSnapshot', () => {
+  it('uses a verified analysis stream for both hands and identified Prize cards', () => {
+    const player = (hand: Array<{ id: number; serial: number }>, prize: Array<{ id: number; serial: number }>) => ({
+      active: [],
+      bench: [],
+      benchMax: 5,
+      hand,
+      handCount: hand.length,
+      deckCount: 50,
+      prize,
+    });
+    const current = {
+      turn: 1,
+      yourIndex: 0,
+      result: -1,
+      players: [
+        player([{ id: 1, serial: 10 }], [{ id: 2, serial: 11 }]),
+        player([{ id: 3, serial: 70 }], [{ id: 4, serial: 71 }]),
+      ],
+    };
+    const snapshot = cabtReplayToSnapshot({
+      visualize: [{ current: { ...current, players: [current.players[0], { ...current.players[1], hand: undefined }] } }],
+      analysisVisualize: [{ current }],
+    });
+
+    expect(snapshot.views[0].players.map((value) => value.hand.map((card) => card.id))).toEqual([[1], [3]]);
+    expect(snapshot.views[0].players.map((value) => value.prizes?.map((card) => card.id))).toEqual([[2], [4]]);
+  });
+
   it('loads top-level Kaggle episode JSON from the public archive datasets', () => {
     const snapshot = cabtReplayToSnapshot({
       id: 'episode-env-id',
@@ -50,6 +78,52 @@ describe('cabtReplayToSnapshot', () => {
     expect(snapshot.name).toBe('Card Battle replay');
     expect(snapshot.players.map((player) => player.name)).toEqual(['Archive player 1', 'Archive player 2']);
     expect(snapshot.views).toHaveLength(1);
+  });
+
+  it('drops log events re-delivered through the other seat stream', () => {
+    const current = (yourIndex: number) => ({
+      turn: 1,
+      yourIndex,
+      result: -1,
+      players: [{
+        active: [],
+        bench: [],
+        handCount: 0,
+        deckCount: 60,
+        prize: [],
+      }, {
+        active: [],
+        bench: [],
+        handCount: 0,
+        deckCount: 60,
+        prize: [],
+      }],
+    });
+    const ownDraw = { type: 'Draw', playerIndex: 0, cardId: 1, serial: 10 };
+    const hiddenDraw = { type: 'DrawReverse', playerIndex: 0 };
+    const turnStart = { type: 'TurnStart', playerIndex: 1 };
+
+    const snapshot = cabtReplayToSnapshot({
+      source: {
+        format: 'raw-kaggle-envelope',
+        logDelivery: 'per-seat-since-last-observation',
+      },
+      visualize: [{
+        current: current(0),
+        logs: [ownDraw],
+      }, {
+        current: current(1),
+        // Seat 1 receives the already-seen draw plus the new TurnStart.
+        logs: [hiddenDraw, turnStart],
+      }, {
+        current: current(0),
+        // Seat 0 then receives that same TurnStart at its next observation.
+        logs: [turnStart],
+      }],
+    });
+
+    expect(snapshot.views.map((view) => view.logs.length)).toEqual([1, 2, 2]);
+    expect(snapshot.views.at(-1)?.logs.map((log) => log.params?.type)).toEqual(['Draw', 'TurnStart']);
   });
 
   it('renders physical attached energy cards instead of provided energy units', () => {

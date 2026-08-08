@@ -1,6 +1,17 @@
 import type { GameView } from '../lib/game/types';
 import { replayAnimationPhaseGapMs, replayStepPlaybackDelayMs, type ReplaySnapshot, type ReplayStep } from '../lib/game/replay';
+import {
+  nextReplayDisagreement,
+  replayDecisionAnalyses,
+  type ReplayDecisionAnalysis,
+} from '../lib/game/replayAnalysis';
+import {
+  replayPositionFromSearch,
+  replayStepForState,
+  replayUrlAtState,
+} from '../lib/game/replayLocation';
 import { cabtReplayToSnapshot } from '../lib/cabt/cabtReplay';
+import { exactDecisionResultView } from '../lib/game/exactReplay';
 
 // The raw per-state observation ({current, select}) the value head needs, kept
 // alongside the projected snapshot (which drops it). Frame index === stateIndex
@@ -16,10 +27,36 @@ export type ReplayObservationFrame = {
   searchBeginInput: string | null;
 };
 
+export type ReplayAnalysisVisibility = {
+  mode: 'analysis' | 'perspective';
+  hands: 'full' | 'per-actor' | 'counts';
+  prizes: 'full' | 'counts';
+  warning?: string;
+};
+
+export type ReplayGameContext = {
+  id: string;
+  game_uid: string;
+  search_depth: number;
+  search_depths: number[];
+  model_name: string;
+  model_dtype: string;
+  source: string;
+  decks: Array<{ family_name: string; family_id: string; deck_id: string }>;
+};
+
+const perspectiveVisibility: ReplayAnalysisVisibility = {
+  mode: 'perspective',
+  hands: 'per-actor',
+  prizes: 'counts',
+};
+
 class ReplayStore {
   replay = $state<ReplaySnapshot | null>(null);
   stepIndex = $state(0);
+  stateIndex = $state(0);
   animationPhaseIndex = $state(0);
+  animationsEnabled = $state(true);
   loading = $state(false);
   error = $state('');
   copiedForkPoint = $state(false);
@@ -36,6 +73,9 @@ class ReplayStore {
   // the opponent's hand leaves that seat false, so the graph shows the honest
   // seat only with an explicit "perspective unavailable" label, never a lie.
   honestSeats = $state<[boolean, boolean]>([false, false]);
+  analysisVisibility = $state<ReplayAnalysisVisibility>(perspectiveVisibility);
+  gameContext = $state<ReplayGameContext | null>(null);
+  decisionAnalyses = $state<ReplayDecisionAnalysis[]>([]);
   // True while the timeline is being navigated faster than animations can play
   // (scrub-bar drag, key-repeat stepping). The animation layers suppress all
   // choreography and render settled views directly while this is set; otherwise
@@ -70,9 +110,15 @@ class ReplayStore {
   }
 
   get currentDisplayLabel(): string {
+    if (!this.animationsEnabled) {
+      return exactDecisionLabel(this.currentDecisionAnalysis);
+    }
     const step = this.currentStep;
     if (!step) {
       return '';
+    }
+    if (this.stateIndex !== step.stateIndex) {
+      return `State ${this.stateIndex}`;
     }
     return step.animationPhases?.[this.animationPhaseIndex]?.label ?? step.label;
   }
@@ -82,6 +128,22 @@ class ReplayStore {
     const step = this.currentStep;
     if (!replay || !step) {
       return null;
+    }
+    if (!this.animationsEnabled) {
+      // A recorded selection on state N produces state N+1. Exact-decision
+      // mode keeps the decision metadata at N but renders its resulting board,
+      // so the named action and visible card movement share one timeline step.
+      const resultView = replay.views[Math.min(this.stateIndex + 1, replay.stateCount - 1)] ?? null;
+      return exactDecisionResultView(
+        resultView,
+        replay.views,
+        this.stateIndex,
+        this.observationFrames[this.stateIndex]?.select,
+        this.currentDecisionAnalysis,
+      );
+    }
+    if (this.stateIndex !== step.stateIndex) {
+      return replay.views[this.stateIndex] ?? null;
     }
     const phase = step.animationPhases?.[this.animationPhaseIndex];
     if (phase) {
@@ -188,6 +250,27 @@ class ReplayStore {
     this.setStep(step.index + 1);
   }
 
+  get maxDecisionStateIndex(): number {
+    return Math.max(0, ...this.decisionAnalyses.map((analysis) => analysis.stateIndex));
+  }
+
+  get currentDecisionAnalysis(): ReplayDecisionAnalysis | null {
+    return this.decisionAnalyses.find((analysis) =>
+      analysis.stateIndex === this.stateIndex
+    ) ?? null;
+  }
+
+  get nextDisagreementStateIndex(): number | null {
+    return nextReplayDisagreement(
+      this.decisionAnalyses,
+      this.stateIndex,
+    )?.stateIndex ?? null;
+  }
+
+  get isTimelinePosition(): boolean {
+    return this.currentStep?.stateIndex === this.stateIndex;
+  }
+
   async loadSaved(id = 'kaggle-context.json'): Promise<void> {
     await this.loadCandidates(replayCandidates(id));
   }
@@ -211,8 +294,26 @@ class ReplayStore {
       this.observationFrames = loaded.frames;
       this.decks = loaded.decks;
       this.honestSeats = loaded.honestSeats;
-      this.stepIndex = 0;
+      this.analysisVisibility = loaded.analysisVisibility;
+      this.gameContext = loaded.gameContext;
+      this.decisionAnalyses = loaded.decisionAnalyses;
+      const search = typeof window === 'undefined' ? '' : window.location.search;
+      if (loaded.analysisVisibility.mode !== 'analysis') {
+        this.animationsEnabled = true;
+      } else if (new URLSearchParams(search).get('detail') === 'exact') {
+        this.animationsEnabled = false;
+      }
+      const position = replayPositionFromSearch(
+        search,
+        loaded.snapshot.steps,
+        loaded.snapshot.stateCount,
+      );
+      this.stepIndex = position.stepIndex;
+      this.stateIndex = this.animationsEnabled
+        ? position.stateIndex
+        : Math.min(position.stateIndex, this.maxDecisionStateIndex);
       this.animationPhaseIndex = 0;
+      this.syncPositionUrl();
       this.scheduleAnimationPhase();
     } catch (error) {
       this.error = error instanceof Error ? error.message : String(error);
@@ -220,7 +321,11 @@ class ReplayStore {
       this.observationFrames = [];
       this.decks = [];
       this.honestSeats = [false, false];
+      this.analysisVisibility = perspectiveVisibility;
+      this.gameContext = null;
+      this.decisionAnalyses = [];
       this.stepIndex = 0;
+      this.stateIndex = 0;
       this.animationPhaseIndex = 0;
     } finally {
       this.loading = false;
@@ -236,7 +341,11 @@ class ReplayStore {
     this.observationFrames = [];
     this.decks = [];
     this.honestSeats = [false, false];
+    this.analysisVisibility = perspectiveVisibility;
+    this.gameContext = null;
+    this.decisionAnalyses = [];
     this.stepIndex = 0;
+    this.stateIndex = 0;
     this.animationPhaseIndex = 0;
     this.loading = false;
     this.error = '';
@@ -271,8 +380,10 @@ class ReplayStore {
   setStep(index: number): void {
     this.markNavigation();
     this.stepIndex = clampIndex(index, this.maxStepIndex);
+    this.stateIndex = this.currentStep?.stateIndex ?? 0;
     this.animationPhaseIndex = 0;
     this.copiedForkPoint = false;
+    this.syncPositionUrl();
     this.scheduleAnimationPhase();
     if (this.stepIndex >= this.maxStepIndex) {
       this.pause();
@@ -284,27 +395,49 @@ class ReplayStore {
   }
 
   nextStep(): void {
+    if (!this.animationsEnabled) {
+      this.setStateIndex(this.stateIndex + 1);
+      return;
+    }
     this.setStep(this.stepIndex + 1);
   }
 
   previousStep(): void {
+    if (!this.animationsEnabled) {
+      this.setStateIndex(this.stateIndex - 1);
+      return;
+    }
     this.setStep(this.stepIndex - 1);
   }
 
   firstStep(): void {
+    if (!this.animationsEnabled) {
+      this.setStateIndex(0);
+      return;
+    }
     this.setStep(0);
   }
 
   lastStep(): void {
+    if (!this.animationsEnabled) {
+      this.setStateIndex(this.maxDecisionStateIndex);
+      return;
+    }
     this.setStep(this.maxStepIndex);
   }
 
   play(): void {
-    if (!this.replay || this.maxStepIndex <= 0) {
+    if (!this.replay || this.maxNavigationIndex <= 0) {
       return;
     }
-    if (this.stepIndex >= this.maxStepIndex) {
-      this.stepIndex = 0;
+    if (this.atEnd) {
+      if (this.animationsEnabled) {
+        this.stepIndex = 0;
+        this.stateIndex = this.currentStep?.stateIndex ?? 0;
+      } else {
+        this.stateIndex = 0;
+        this.stepIndex = replayStepForState(this.replay.steps, 0);
+      }
       this.animationPhaseIndex = 0;
       this.scheduleAnimationPhase();
     }
@@ -331,39 +464,116 @@ class ReplayStore {
     if (!replay) {
       return;
     }
-    const clampedState = clampIndex(stateIndex, Math.max(0, replay.stateCount - 1));
-    const exact = replay.steps.findIndex((step) => step.stateIndex === clampedState);
-    if (exact !== -1) {
-      this.setStep(exact);
+    const clampedState = clampIndex(
+      stateIndex,
+      this.animationsEnabled ? Math.max(0, replay.stateCount - 1) : this.maxDecisionStateIndex,
+    );
+    if (!this.animationsEnabled) {
+      this.markNavigation();
+      this.stateIndex = clampedState;
+      this.stepIndex = replayStepForState(replay.steps, clampedState);
+      this.animationPhaseIndex = 0;
+      this.copiedForkPoint = false;
+      this.clearAnimationPhaseTimer();
+      this.syncPositionUrl();
+      if (this.atEnd) {
+        this.pause();
+      } else if (this.isPlaying) {
+        this.schedulePlaybackStep();
+      }
       return;
     }
+    this.setStep(replayStepForState(replay.steps, clampedState));
+    this.stateIndex = clampedState;
+    this.animationPhaseIndex = 0;
+    this.clearAnimationPhaseTimer();
+    this.syncPositionUrl();
+  }
 
-    let bestIndex = 0;
-    for (let index = 0; index < replay.steps.length; index += 1) {
-      if (replay.steps[index].stateIndex <= clampedState) {
-        bestIndex = index;
-      }
+  nextDisagreement(): void {
+    const stateIndex = this.nextDisagreementStateIndex;
+    if (stateIndex !== null) {
+      this.setStateIndex(stateIndex);
     }
-    this.setStep(bestIndex);
+  }
+
+  setAnimationsEnabled(enabled: boolean): void {
+    if (this.animationsEnabled === enabled) {
+      return;
+    }
+    this.pause();
+    this.clearAnimationPhaseTimer();
+    this.animationsEnabled = enabled;
+    this.animationPhaseIndex = 0;
+    if (this.replay) {
+      if (!enabled) {
+        this.stateIndex = Math.min(this.stateIndex, this.maxDecisionStateIndex);
+      }
+      this.stepIndex = replayStepForState(this.replay.steps, this.stateIndex);
+      if (enabled) {
+        this.stateIndex = this.currentStep?.stateIndex ?? this.stateIndex;
+        this.scheduleAnimationPhase();
+      }
+      this.syncPositionUrl();
+    }
   }
 
   async copyForkPoint(): Promise<void> {
     const replay = this.replay;
-    const step = this.currentStep;
-    if (!replay || !step || typeof navigator === 'undefined' || !navigator.clipboard) {
+    if (!replay || typeof navigator === 'undefined' || !navigator.clipboard) {
       return;
     }
 
-    await navigator.clipboard.writeText(JSON.stringify({
-      replayId: replay.id,
-      replayName: replay.name,
-      stepIndex: step.index,
-      stateIndex: step.stateIndex,
-      actionIndex: step.actionIndex,
-      actionType: step.type,
-      turn: step.turn,
-    }));
+    const url = this.positionUrl();
+    const step = this.currentStep;
+    const context = this.gameContext;
+    const analysis = this.currentDecisionAnalysis;
+    const position = this.animationsEnabled
+      ? `state ${this.stateIndex}`
+      : `decision state ${this.stateIndex} → result state ${Math.min(this.stateIndex + 1, replay.stateCount - 1)}`;
+    const lines = [
+      'CABT game checkpoint',
+      `Game: ${context?.game_uid ?? replay.name}`,
+      `Position: ${position}, step ${this.stepIndex}${this.currentView ? `, turn ${this.currentView.turn}` : ''}`,
+      `Event: ${this.currentDisplayLabel || step?.label || 'Recorded position'}`,
+    ];
+    if (context) {
+      lines.push(
+        `Search: depth ${context.search_depth} · ${context.model_name}${context.model_dtype ? ` · ${context.model_dtype}` : ''}`,
+        `Decks: ${context.decks.map((deck) => deck.family_name).join(' vs ')}`,
+        `Bank ID: ${context.id} · ${context.source}`,
+      );
+    }
+    if (analysis) {
+      const verdict = analysis.searched
+        ? (analysis.changed ? 'search changed the move' : 'search agreed with policy')
+        : (analysis.mode || 'recorded decision');
+      lines.push(`Decision: ${verdict}${analysis.completedTraversals !== undefined ? ` · ${analysis.completedTraversals} sims` : ''}`);
+    }
+    lines.push(`Link: ${url}`);
+    await navigator.clipboard.writeText(lines.join('\n'));
     this.copiedForkPoint = true;
+  }
+
+  private syncPositionUrl(): void {
+    if (typeof window === 'undefined' || !this.replay) {
+      return;
+    }
+    window.history.replaceState(
+      {},
+      '',
+      this.positionUrl(),
+    );
+  }
+
+  private positionUrl(): string {
+    const next = new URL(replayUrlAtState(window.location.href, this.stateIndex, this.stepIndex));
+    if (this.animationsEnabled) {
+      next.searchParams.delete('detail');
+    } else {
+      next.searchParams.set('detail', 'exact');
+    }
+    return next.toString();
   }
 
   private clearPlaybackTimer(): void {
@@ -379,16 +589,23 @@ class ReplayStore {
       return;
     }
     this.playbackTimer = setTimeout(() => {
-      if (this.stepIndex >= this.maxStepIndex) {
+      if (this.atEnd) {
         this.pause();
         return;
       }
       this.nextStep();
-    }, Math.max(120, Math.round(replayStepPlaybackDelayMs(this.currentStep, this.playbackDelayMs) / this.playbackSpeed)));
+    }, Math.max(120, Math.round(
+      (this.animationsEnabled
+        ? replayStepPlaybackDelayMs(this.currentStep, this.playbackDelayMs)
+        : this.playbackDelayMs) / this.playbackSpeed,
+    )));
   }
 
   private scheduleAnimationPhase(): void {
     this.clearAnimationPhaseTimer();
+    if (!this.animationsEnabled || !this.isTimelinePosition) {
+      return;
+    }
     const phase = this.currentStep?.animationPhases?.[this.animationPhaseIndex];
     if (!phase) {
       return;
@@ -406,6 +623,18 @@ class ReplayStore {
     }, phaseDurationMs + replayAnimationPhaseGapMs);
   }
 
+  private get maxNavigationIndex(): number {
+    return this.animationsEnabled
+      ? this.maxStepIndex
+      : this.maxDecisionStateIndex;
+  }
+
+  private get atEnd(): boolean {
+    return this.animationsEnabled
+      ? this.stepIndex >= this.maxStepIndex
+      : this.stateIndex >= this.maxNavigationIndex;
+  }
+
   private clearAnimationPhaseTimer(): void {
     if (this.animationPhaseTimer) {
       clearTimeout(this.animationPhaseTimer);
@@ -414,11 +643,29 @@ class ReplayStore {
   }
 }
 
+function exactDecisionLabel(analysis: ReplayDecisionAnalysis | null): string {
+  if (!analysis) {
+    return 'Final position';
+  }
+  const actor = analysis.playerIndex === undefined ? 'Model' : `Player ${analysis.playerIndex + 1}`;
+  const selection = analysis.playedSelection ?? [];
+  if (!selection.length) {
+    return `${actor} submitted no selection.`;
+  }
+  const choices = selection.map((index) =>
+    analysis.legalActions?.[index]?.label ?? `Option ${index}`
+  );
+  return `${actor} chose ${choices.join(' + ')}.`;
+}
+
 type LoadedReplay = {
   snapshot: ReplaySnapshot;
   frames: ReplayObservationFrame[];
   decks: number[][];
   honestSeats: [boolean, boolean];
+  analysisVisibility: ReplayAnalysisVisibility;
+  gameContext: ReplayGameContext | null;
+  decisionAnalyses: ReplayDecisionAnalysis[];
 };
 
 async function loadCabtReplay(candidates: string[]): Promise<LoadedReplay> {
@@ -436,12 +683,53 @@ async function loadCabtReplay(candidates: string[]): Promise<LoadedReplay> {
         frames: observationFramesFrom(json),
         decks: Array.isArray(json?.decks) ? json.decks : [],
         honestSeats: honestSeatsFrom(json),
+        analysisVisibility: analysisVisibilityFrom(json),
+        gameContext: gameContextFrom(json),
+        decisionAnalyses: replayDecisionAnalyses(json),
       };
     } catch (error) {
       failures.push(`${url}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
   throw new Error(`Unable to load CABT replay. Tried ${failures.join('; ')}`);
+}
+
+function analysisVisibilityFrom(json: unknown): ReplayAnalysisVisibility {
+  const value = (json as { analysisVisibility?: Partial<ReplayAnalysisVisibility> })?.analysisVisibility;
+  if (value?.mode !== 'analysis') {
+    return perspectiveVisibility;
+  }
+  return {
+    mode: 'analysis',
+    hands: value.hands === 'full' || value.hands === 'counts' ? value.hands : 'per-actor',
+    prizes: value.prizes === 'full' ? 'full' : 'counts',
+    ...(typeof value.warning === 'string' ? { warning: value.warning } : {}),
+  };
+}
+
+function gameContextFrom(json: unknown): ReplayGameContext | null {
+  const value = (json as { gameBank?: Partial<ReplayGameContext> })?.gameBank;
+  if (!value || typeof value.id !== 'string' || typeof value.game_uid !== 'string') {
+    return null;
+  }
+  const decks = Array.isArray(value.decks)
+    ? value.decks.filter((deck): deck is ReplayGameContext['decks'][number] => (
+      !!deck
+      && typeof deck.family_name === 'string'
+      && typeof deck.family_id === 'string'
+      && typeof deck.deck_id === 'string'
+    ))
+    : [];
+  return {
+    id: value.id,
+    game_uid: value.game_uid,
+    search_depth: Number(value.search_depth) || 0,
+    search_depths: Array.isArray(value.search_depths) ? value.search_depths.map(Number) : [],
+    model_name: typeof value.model_name === 'string' ? value.model_name : 'unknown',
+    model_dtype: typeof value.model_dtype === 'string' ? value.model_dtype : '',
+    source: typeof value.source === 'string' ? value.source : '',
+    decks,
+  };
 }
 
 // Per-seat honesty: a seat is scorable when ITS OWN hand is present. Raw
